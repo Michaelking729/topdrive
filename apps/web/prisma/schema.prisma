@@ -1,30 +1,53 @@
+// =======================
+// Datasource (Render Postgres)
+// =======================
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =======================
+// Prisma Client
+// =======================
 generator client {
   provider = "prisma-client-js"
 }
 
-datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
-}
-
-model Ride {
-  id            String   @id @default(cuid())
-  pickup        String
-  destination   String
-  city          String
-  estimate      Int
-  offeredPrice  Int?
-  status        RideStatus @default(REQUESTED)
-  driverName    String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-}
-
+// =======================
+// Ride Status Lifecycle
+// =======================
 enum RideStatus {
-  REQUESTED
-  ACCEPTED
-  ARRIVING
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
+  REQUESTED     // Rider created request
+  ACCEPTED      // Driver accepted
+  ARRIVING      // Driver on the way
+  IN_PROGRESS   // Trip started
+  COMPLETED     // Trip finished
+  CANCELLED     // Cancelled by rider or driver
+}
+
+// =======================
+// Ride Model
+// =======================
+model Ride {
+  id           String     @id @default(cuid())
+
+  // Ride details
+  pickup       String
+  destination  String
+  city         String
+  estimate     Float
+  offeredPrice Float?
+
+  // Status & driver
+  status       RideStatus @default(REQUESTED)
+  driverName   String?
+
+  // 🔜 Location (for maps – safe to keep null for now)
+  driverLat    Float?
+  driverLng    Float?
+  driverUpdatedAt DateTime?
+
+  // Timestamps
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 }
