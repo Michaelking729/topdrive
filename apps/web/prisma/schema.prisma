@@ -1,0 +1,30 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Ride {
+  id            String   @id @default(cuid())
+  pickup        String
+  destination   String
+  city          String
+  estimate      Int
+  offeredPrice  Int?
+  status        RideStatus @default(REQUESTED)
+  driverName    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+enum RideStatus {
+  REQUESTED
+  ACCEPTED
+  ARRIVING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}

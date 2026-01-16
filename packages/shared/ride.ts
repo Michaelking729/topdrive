@@ -8,24 +8,14 @@ export type RideStatus =
 
 export type RideRequest = {
   id: string;
-
   pickup: string;
   destination: string;
-
   estimate: number;
-
-  // later: offer mode
   offeredPrice?: number;
-
   status: RideStatus;
-
-  // driver assignment (prototype)
   driverName?: string;
-
   createdAt: string;
   updatedAt: string;
-
-  // for now: focus location
   city: "Ijebu-Ode";
 };
 
