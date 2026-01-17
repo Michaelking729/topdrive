@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { Ride, RideStatus } from "@/lib/api";
-import { getRides, acceptRide, setRideStatus, type RideStatus } from "@/lib/api";
+import { getRides, acceptRide, setRideStatus, type Ride, type RideStatus } from "@/lib/api";
 
 
 /* ---------------- helpers ---------------- */
