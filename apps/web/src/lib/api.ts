@@ -25,7 +25,9 @@ async function readJsonOrThrow(res: Response) {
 
   if (!res.ok) {
     if (contentType.includes("text/html")) {
-      throw new Error(`Request failed (${res.status}). API route not found or crashed.`);
+      throw new Error(
+        `Request failed (${res.status}). API route not found or crashed.`
+      );
     }
     try {
       const data = JSON.parse(text);
