@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { getRide, type Ride, type RideStatus } from "@/lib/api";
+import { getAccessToken } from "@/lib/session";
 
 function formatMoney(n: number) {
   return new Intl.NumberFormat("en-NG", {
@@ -58,6 +59,10 @@ export default function RideTrackingPage() {
   const [ride, setRide] = useState<Ride | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [paymentBusy, setPaymentBusy] = useState(false);
+  const [paymentMsg, setPaymentMsg] = useState<string | null>(null);
+
+  const token = getAccessToken();
 
   async function load() {
     if (!id) return;
@@ -69,6 +74,32 @@ export default function RideTrackingPage() {
       setErr(e?.message ?? "Ride not found");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function chargePayment() {
+    if (!id || !ride) return;
+    setPaymentBusy(true);
+    setPaymentMsg(null);
+    try {
+      const res = await fetch(`/api/rides/${id}/payment`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          amount: ride.offeredPrice || ride.estimate,
+          provider: "mock",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Payment failed");
+      setPaymentMsg(`✅ ${data.message}`);
+    } catch (e: any) {
+      setPaymentMsg(`❌ ${e?.message || "Payment error"}`);
+    } finally {
+      setPaymentBusy(false);
     }
   }
 
@@ -277,6 +308,31 @@ export default function RideTrackingPage() {
                   <span className="font-semibold">Accepted</span>.
                 </p>
               </div>
+
+              {ride.status === "COMPLETED" && (
+                <div className="mt-6 rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-extrabold text-emerald-900">Trip Complete!</p>
+                      <p className="mt-1 text-sm text-emerald-700">
+                        Amount to pay: <span className="font-bold text-lg">{formatMoney(ride.offeredPrice || ride.estimate)}</span>
+                      </p>
+                    </div>
+                    <button
+                      disabled={paymentBusy}
+                      onClick={chargePayment}
+                      className="shrink-0 rounded-xl bg-emerald-600 text-white px-5 py-2 font-bold text-sm hover:bg-emerald-700 disabled:opacity-60"
+                    >
+                      {paymentBusy ? "Processing..." : "Pay Now"}
+                    </button>
+                  </div>
+                  {paymentMsg && (
+                    <div className="mt-3 rounded-lg bg-white p-3 text-sm font-medium">
+                      {paymentMsg}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </>
         )}

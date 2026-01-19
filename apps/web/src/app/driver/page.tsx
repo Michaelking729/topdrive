@@ -58,6 +58,7 @@ export default function DriverPage() {
   const [busyRideId, setBusyRideId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState(false);
 
   // Load token + user info
   useEffect(() => {
@@ -136,6 +137,13 @@ export default function DriverPage() {
     [rides]
   );
 
+  const earnings = useMemo(() => {
+    return recentDone.reduce(
+      (acc, r) => acc + (r.offeredPrice || r.estimate),
+      0
+    );
+  }, [recentDone]);
+
   async function onAccept(ride: Ride) {
     if (!token) {
       setErr("You are not logged in. Please login again.");
@@ -211,12 +219,24 @@ export default function DriverPage() {
             </div>
           </div>
 
-          <button
-            onClick={() => load(token)}
-            className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50"
-          >
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsOnline(!isOnline)}
+              className={`rounded-2xl px-4 py-2 text-sm font-bold transition ${
+                isOnline
+                  ? "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200"
+                  : "bg-slate-100 text-slate-700 ring-1 ring-slate-200"
+              }`}
+            >
+              {isOnline ? "🟢 Online" : "⚫ Offline"}
+            </button>
+            <button
+              onClick={() => load(token)}
+              className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50"
+            >
+              Refresh
+            </button>
+          </div>
         </div>
       </header>
 
@@ -254,6 +274,18 @@ export default function DriverPage() {
             <p className="text-xs font-bold tracking-wider text-slate-500">RECENT COMPLETED</p>
             <p className="mt-2 text-3xl font-extrabold">{recentDone.length}</p>
             <p className="mt-1 text-sm text-slate-600">Last 10 completed rides</p>
+          </div>
+        </section>
+
+        {/* Earnings */}
+        <section className="rounded-3xl border-2 border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-50 p-6">
+          <div className="flex items-end justify-between">
+            <div>
+              <p className="text-sm font-bold tracking-wider text-emerald-700">TODAY'S EARNINGS</p>
+              <p className="mt-2 text-4xl font-extrabold text-emerald-900">{formatMoney(earnings)}</p>
+              <p className="mt-1 text-sm text-emerald-600">{recentDone.length} completed rides</p>
+            </div>
+            <div className="text-5xl">💰</div>
           </div>
         </section>
 
