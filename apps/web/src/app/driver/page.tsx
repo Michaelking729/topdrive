@@ -1,418 +1,259 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { acceptRide, getRides, setRideStatus, type Ride, type RideStatus } from "@/lib/api";
-
-const TOKEN_KEY = "accessToken"; // change if your login uses a different key
-
-function formatMoney(n: number) {
-  return new Intl.NumberFormat("en-NG", {
-    style: "currency",
-    currency: "NGN",
-    maximumFractionDigits: 0,
-  }).format(n);
-}
-
-function statusLabel(s: Ride["status"]) {
-  if (s === "REQUESTED") return "Requested";
-  if (s === "ACCEPTED") return "Accepted";
-  if (s === "ARRIVING") return "Arriving";
-  if (s === "IN_PROGRESS") return "In progress";
-  if (s === "COMPLETED") return "Completed";
-  if (s === "CANCELLED") return "Cancelled";
-  return s;
-}
-
-function pill(status: Ride["status"]) {
-  switch (status) {
-    case "REQUESTED":
-      return "bg-blue-50 text-blue-700 ring-1 ring-blue-100";
-    case "ACCEPTED":
-      return "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100";
-    case "ARRIVING":
-      return "bg-sky-50 text-sky-700 ring-1 ring-sky-100";
-    case "IN_PROGRESS":
-      return "bg-slate-900 text-white ring-1 ring-slate-900/20";
-    case "COMPLETED":
-      return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100";
-    case "CANCELLED":
-      return "bg-rose-50 text-rose-700 ring-1 ring-rose-100";
-    default:
-      return "bg-slate-50 text-slate-700 ring-1 ring-slate-100";
-  }
-}
-
-function nextStatus(current: RideStatus): RideStatus | null {
-  if (current === "ACCEPTED") return "ARRIVING";
-  if (current === "ARRIVING") return "IN_PROGRESS";
-  if (current === "IN_PROGRESS") return "COMPLETED";
-  return null;
-}
+import React, { useEffect, useState } from "react";
+import { getAccessToken, getUser, logout } from "@/lib/session";
 
 export default function DriverPage() {
-  const [token, setToken] = useState<string>("");
-  const [driverId, setDriverId] = useState<string>("");
-
-  const [rides, setRides] = useState<Ride[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [busyRideId, setBusyRideId] = useState<string | null>(null);
+  const [rides, setRides] = useState<any[]>([]);
+  const [wallet, setWallet] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(false);
+  const [busyRideId, setBusyRideId] = useState<string | null>(null);
+  const [withdrawing, setWithdrawing] = useState(false);
 
-  // Load token + user info
-  useEffect(() => {
-    const t = localStorage.getItem(TOKEN_KEY) || "";
-    setToken(t);
+  const token = getAccessToken();
+  const user = getUser();
 
-    // If your app stores user JSON, we can grab driverId from there
-    // Example: localStorage.setItem("user", JSON.stringify({ id, role }))
-    try {
-      const u = localStorage.getItem("user");
-      if (u) {
-        const parsed = JSON.parse(u);
-        if (parsed?.id) setDriverId(String(parsed.id));
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  async function load(activeToken?: string) {
+  async function load() {
     try {
       setErr(null);
       setLoading(true);
-
-      const t = activeToken ?? token;
-      if (!t) {
-        setRides([]);
-        setErr("You are not logged in. Please login as a DRIVER.");
+      if (!token) {
+        setErr("Not logged in");
         return;
       }
 
-      const data = await getRides();
-      setRides(Array.isArray(data) ? data : []);
+      // Load rides
+      const ridesRes = await fetch("/api/rides", {
+        headers: { authorization: `Bearer ${token}` },
+      }).then((r) => r.json());
+      setRides(ridesRes.rides || []);
+
+      // Load wallet
+      const walletRes = await fetch("/api/wallet", {
+        headers: { authorization: `Bearer ${token}` },
+      }).then((r) => r.json());
+      setWallet(walletRes);
     } catch (e: any) {
-      setErr(e?.message ?? "Failed to load rides");
+      setErr(e?.message);
     } finally {
       setLoading(false);
     }
   }
 
-  // Load when token becomes available
   useEffect(() => {
-    if (!token) {
-      setLoading(false);
-      return;
-    }
-    load(token);
+    load();
+    const interval = setInterval(load, 6000);
+    return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, []);
 
-  // Toast auto-hide
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 2200);
-    return () => clearTimeout(t);
-  }, [toast]);
-
-  // Auto refresh every 8s (nice for driver)
-  useEffect(() => {
-    if (!token) return;
-    const t = setInterval(() => load(token), 8000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
-
-  const requested = useMemo(
-    () => rides.filter((r) => r.status === "REQUESTED"),
-    [rides]
-  );
-  const active = useMemo(
-    () => rides.filter((r) => r.status !== "REQUESTED" && r.status !== "COMPLETED" && r.status !== "CANCELLED"),
-    [rides]
-  );
-  const recentDone = useMemo(
-    () => rides.filter((r) => r.status === "COMPLETED").slice(0, 10),
-    [rides]
-  );
-
-  const earnings = useMemo(() => {
-    return recentDone.reduce(
-      (acc, r) => acc + (r.offeredPrice || r.estimate),
-      0
-    );
-  }, [recentDone]);
-
-  async function onAccept(ride: Ride) {
-    if (!token) {
-      setErr("You are not logged in. Please login again.");
-      return;
-    }
-    if (!driverId) {
-      setErr("Driver ID not found. Please login again (user data missing).");
-      return;
-    }
-
-    setBusyRideId(ride.id);
-    setErr(null);
-
+  async function acceptRide(rideId: string, driverId: string) {
+    setBusyRideId(rideId);
     try {
-      await acceptRide(ride.id, driverId);
-      setToast("Ride accepted ✅");
-      await load(token);
-      window.location.href = `/ride/${ride.id}`;
+      const res = await fetch(`/api/rides/${rideId}/accept`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ driverId }),
+      });
+      if (!res.ok) throw new Error("Failed to accept ride");
+      await load();
+      window.location.href = `/ride/${rideId}`;
     } catch (e: any) {
-      setErr(e?.message ?? "Failed to accept ride");
+      setErr(e.message);
     } finally {
       setBusyRideId(null);
     }
   }
 
-  async function onAdvanceStatus(ride: Ride) {
-    if (!token) {
-      setErr("You are not logged in. Please login again.");
-      return;
-    }
-
-    const ns = nextStatus(ride.status);
-    if (!ns) return;
-
-    setBusyRideId(ride.id);
-    setErr(null);
-
+  async function updateStatus(rideId: string, nextStatus: string) {
+    setBusyRideId(rideId);
     try {
-      await setRideStatus(ride.id, ns);
-      setToast(`Status updated → ${statusLabel(ns)} ✅`);
-      await load(token);
+      const res = await fetch(`/api/rides/${rideId}/status`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      if (!res.ok) throw new Error("Failed to update status");
+      await load();
     } catch (e: any) {
-      setErr(e?.message ?? "Failed to update status");
+      setErr(e.message);
     } finally {
       setBusyRideId(null);
     }
   }
+
+  async function withdraw() {
+    if (!wallet?.balance || wallet.balance <= 0) {
+      setErr("Insufficient balance to withdraw");
+      return;
+    }
+    setWithdrawing(true);
+    try {
+      const res = await fetch("/api/wallet", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ action: "withdraw", amount: wallet.balance }),
+      });
+      if (!res.ok) throw new Error("Withdrawal failed");
+      const data = await res.json();
+      setErr(null);
+      alert("✅ " + data.message);
+      await load();
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setWithdrawing(false);
+    }
+  }
+
+  const requested = rides.filter((r) => r.status === "REQUESTED");
+  const active = rides.filter((r) => !["REQUESTED", "COMPLETED", "CANCELLED"].includes(r.status));
+  const completed = rides.filter((r) => r.status === "COMPLETED");
+
+  const getNextStatus = (status: string) => {
+    if (status === "ACCEPTED") return "ARRIVING";
+    if (status === "ARRIVING") return "IN_PROGRESS";
+    if (status === "IN_PROGRESS") return "COMPLETED";
+    return null;
+  };
 
   return (
-    <main className="min-h-screen bg-white text-slate-900">
-      {/* Background */}
-      <div className="pointer-events-none fixed inset-0 -z-10">
-        <div className="absolute -top-24 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-emerald-200/40 blur-3xl" />
-        <div className="absolute top-48 -left-24 h-[420px] w-[420px] rounded-full bg-teal-200/35 blur-3xl" />
-        <div className="absolute -bottom-24 right-0 h-[460px] w-[460px] rounded-full bg-sky-200/30 blur-3xl" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(2,6,23,0.05)_1px,transparent_0)] [background-size:18px_18px]" />
+    <main className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      <div className="fixed inset-0 -z-10 overflow-hidden">
+        <div className="absolute top-0 left-0 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: "1s" }}></div>
       </div>
 
-      {/* Header */}
-      <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/75 backdrop-blur">
-        <div className="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <div className="h-9 w-9 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-600 shadow-sm" />
-              <div className="min-w-0">
-                <h1 className="text-base sm:text-lg font-extrabold tracking-tight truncate">
-                  TOP DRIVE — Driver Dashboard
-                </h1>
-                <p className="text-xs sm:text-sm text-slate-600 truncate">
-                  Accept rides • Update trip status • Track earnings
-                </p>
-              </div>
-            </div>
+      <header className="sticky top-0 z-50 backdrop-blur-xl bg-black/40 border-b border-white/10">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-black bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
+              🚗 DRIVER HUB
+            </h1>
+            <p className="text-xs text-gray-300 mt-1">{user?.name || "Driver"}</p>
           </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setIsOnline(!isOnline)}
-              className={`rounded-2xl px-4 py-2 text-sm font-bold transition ${
-                isOnline
-                  ? "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200"
-                  : "bg-slate-100 text-slate-700 ring-1 ring-slate-200"
-              }`}
-            >
+          <div className="flex gap-3">
+            <button onClick={() => setIsOnline(!isOnline)} className={`rounded-full px-4 py-2 text-sm font-bold transition-all ${isOnline ? "bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg shadow-green-500/50" : "bg-gray-700 text-gray-200 hover:bg-gray-600"}`}>
               {isOnline ? "🟢 Online" : "⚫ Offline"}
             </button>
-            <button
-              onClick={() => load(token)}
-              className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50"
-            >
-              Refresh
+            <button onClick={() => { logout(); window.location.href = "/login"; }} className="rounded-full bg-gradient-to-r from-red-500 to-pink-600 text-white px-4 py-2 text-sm font-bold hover:shadow-lg transition-all">
+              Logout
             </button>
           </div>
         </div>
       </header>
 
-      {/* Toast */}
-      {toast && (
-        <div className="fixed top-20 left-1/2 z-30 -translate-x-1/2">
-          <div className="rounded-2xl bg-slate-900 text-white px-4 py-3 text-sm font-semibold shadow-lg">
-            {toast}
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+        {err && <div className="rounded-2xl border-l-4 border-red-500 bg-red-500/20 p-4 text-red-200 font-semibold backdrop-blur animate-pulse">⚠️ {err}</div>}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="rounded-3xl p-8 bg-gradient-to-br from-purple-600 via-purple-700 to-indigo-800 text-white shadow-2xl">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-black">💳 Wallet</h2>
+              <span className="text-4xl animate-bounce">💰</span>
+            </div>
+            <p className="text-sm opacity-80">Available Balance</p>
+            <p className="text-5xl font-black mt-2">₦{wallet?.balance?.toLocaleString() || "0"}</p>
+            <p className="text-sm opacity-70 mt-2">{wallet?.completedRides || 0} rides completed</p>
+            <button onClick={withdraw} disabled={withdrawing || !wallet?.balance} className="mt-6 w-full rounded-xl bg-white text-purple-600 font-bold py-3 hover:bg-gray-100 disabled:opacity-50">
+              {withdrawing ? "Processing..." : "Withdraw Funds"}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <div className="rounded-2xl p-6 bg-gradient-to-br from-blue-500 to-cyan-600 text-white shadow-xl hover:scale-105 transition-all">
+              <p className="text-sm font-semibold opacity-80">Available</p>
+              <p className="text-3xl font-black mt-2">{requested.length}</p>
+              <p className="text-xs opacity-70 mt-1">Requests</p>
+            </div>
+            <div className="rounded-2xl p-6 bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-xl hover:scale-105 transition-all">
+              <p className="text-sm font-semibold opacity-80">Active</p>
+              <p className="text-3xl font-black mt-2">{active.length}</p>
+              <p className="text-xs opacity-70 mt-1">Trips</p>
+            </div>
+            <div className="rounded-2xl p-6 bg-gradient-to-br from-emerald-500 to-green-600 text-white shadow-xl hover:scale-105 transition-all">
+              <p className="text-sm font-semibold opacity-80">Completed</p>
+              <p className="text-3xl font-black mt-2">{completed.length}</p>
+              <p className="text-xs opacity-70 mt-1">Rides</p>
+            </div>
           </div>
         </div>
-      )}
 
-      <div className="mx-auto max-w-6xl px-4 py-6 sm:py-10 space-y-6">
-        {err && (
-          <div className="rounded-3xl border border-rose-200 bg-rose-50 p-4 text-rose-800 font-semibold">
-            {err}
-          </div>
-        )}
-
-        {/* Quick stats */}
-        <section className="grid gap-4 sm:grid-cols-3">
-          <div className="rounded-3xl border border-slate-200/70 bg-white/85 p-5 shadow-[0_18px_55px_rgba(2,6,23,0.06)]">
-            <p className="text-xs font-bold tracking-wider text-slate-500">REQUESTS</p>
-            <p className="mt-2 text-3xl font-extrabold">{requested.length}</p>
-            <p className="mt-1 text-sm text-slate-600">Available to accept now</p>
-          </div>
-
-          <div className="rounded-3xl border border-slate-200/70 bg-white/85 p-5 shadow-[0_18px_55px_rgba(2,6,23,0.06)]">
-            <p className="text-xs font-bold tracking-wider text-slate-500">ACTIVE</p>
-            <p className="mt-2 text-3xl font-extrabold">{active.length}</p>
-            <p className="mt-1 text-sm text-slate-600">Accepted / In progress</p>
-          </div>
-
-          <div className="rounded-3xl border border-slate-200/70 bg-white/85 p-5 shadow-[0_18px_55px_rgba(2,6,23,0.06)]">
-            <p className="text-xs font-bold tracking-wider text-slate-500">RECENT COMPLETED</p>
-            <p className="mt-2 text-3xl font-extrabold">{recentDone.length}</p>
-            <p className="mt-1 text-sm text-slate-600">Last 10 completed rides</p>
-          </div>
-        </section>
-
-        {/* Earnings */}
-        <section className="rounded-3xl border-2 border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-50 p-6">
-          <div className="flex items-end justify-between">
-            <div>
-              <p className="text-sm font-bold tracking-wider text-emerald-700">TODAY'S EARNINGS</p>
-              <p className="mt-2 text-4xl font-extrabold text-emerald-900">{formatMoney(earnings)}</p>
-              <p className="mt-1 text-sm text-emerald-600">{recentDone.length} completed rides</p>
-            </div>
-            <div className="text-5xl">💰</div>
-          </div>
-        </section>
-
-        {/* Requests */}
-        <section className="rounded-3xl border border-slate-200/70 bg-white/85 p-5 sm:p-7 shadow-[0_18px_55px_rgba(2,6,23,0.06)]">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-xl sm:text-2xl font-extrabold">Available Requests</h2>
-              <p className="text-sm text-slate-600">Accept a request to start.</p>
-            </div>
-          </div>
-
-          <div className="mt-4 space-y-3">
+        <div>
+          <h2 className="text-2xl font-black text-white mb-4">📍 Available Requests</h2>
+          <div className="space-y-4">
             {loading ? (
-              <>
-                <div className="h-20 rounded-2xl bg-slate-100 animate-pulse" />
-                <div className="h-20 rounded-2xl bg-slate-100 animate-pulse" />
-                <div className="h-20 rounded-2xl bg-slate-100 animate-pulse" />
-              </>
+              <div className="text-center py-12 text-gray-300 animate-pulse">Loading rides...</div>
             ) : requested.length === 0 ? (
-              <div className="rounded-2xl border border-slate-200/70 bg-white p-5">
-                <p className="font-extrabold">No requests right now</p>
-                <p className="mt-1 text-sm text-slate-600">Keep this page open. It refreshes automatically.</p>
+              <div className="rounded-2xl p-8 bg-gray-800/50 border border-gray-700 text-center text-gray-300">
+                <p className="text-lg font-semibold">No requests available</p>
               </div>
             ) : (
-              requested.map((r) => (
-                <div
-                  key={r.id}
-                  className="rounded-2xl border border-slate-200/70 bg-white p-4 hover:shadow-[0_10px_20px_rgba(2,6,23,0.06)] transition"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-extrabold text-slate-900 break-words">
-                        {r.pickup} → {r.destination}
-                      </p>
-                      <p className="mt-1 text-sm text-slate-600">
-                        City: <span className="font-semibold">{r.city}</span> • Fare:{" "}
-                        <span className="font-semibold">{formatMoney(r.estimate)}</span>
-                      </p>
+              requested.map((ride) => (
+                <div key={ride.id} className="rounded-2xl p-6 bg-gradient-to-br from-gray-800/80 to-gray-900 border-l-4 border-blue-500 shadow-xl hover:scale-102 transition-all">
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <p className="text-lg font-black text-white">{ride.pickup}</p>
+                      <p className="text-sm text-gray-300 mt-1">📍 {ride.destination}</p>
                     </div>
-
-                    <span
-                      className={
-                        "shrink-0 rounded-full px-3 py-1 text-xs font-extrabold " + pill(r.status)
-                      }
-                    >
-                      {statusLabel(r.status)}
-                    </span>
+                    <div className="text-right">
+                      <p className="text-3xl font-black text-emerald-400">₦{ride.estimate}</p>
+                      <p className="text-xs text-gray-400 mt-1">Fare</p>
+                    </div>
                   </div>
-
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                    <a
-                      href={`/ride/${r.id}`}
-                      className="rounded-2xl bg-slate-900 px-3 py-2 text-sm font-extrabold text-white hover:bg-slate-800"
-                    >
-                      View →
-                    </a>
-
-                    <button
-                      onClick={() => onAccept(r)}
-                      disabled={busyRideId === r.id}
-                      className="rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2 text-sm font-extrabold text-white hover:opacity-95 disabled:opacity-60"
-                    >
-                      {busyRideId === r.id ? "Accepting…" : "Accept Ride"}
+                  <p className="text-sm text-gray-400 mb-4">📍 {ride.city}</p>
+                  <div className="flex gap-3">
+                    <a href={`/ride/${ride.id}`} className="flex-1 rounded-xl bg-gray-700 text-white font-bold py-2 text-center hover:bg-gray-600">Details</a>
+                    <button onClick={() => acceptRide(ride.id, user?.id || "")} disabled={busyRideId === ride.id} className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 text-white font-bold py-2 disabled:opacity-50">
+                      {busyRideId === ride.id ? "Accepting..." : "✅ Accept"}
                     </button>
                   </div>
                 </div>
               ))
             )}
           </div>
-        </section>
+        </div>
 
-        {/* Active rides */}
-        <section className="rounded-3xl border border-slate-200/70 bg-white/85 p-5 sm:p-7 shadow-[0_18px_55px_rgba(2,6,23,0.06)]">
-          <h2 className="text-xl sm:text-2xl font-extrabold">My Active Trips</h2>
-          <p className="text-sm text-slate-600 mt-1">Advance status as you move.</p>
-
-          <div className="mt-4 space-y-3">
-            {active.length === 0 ? (
-              <div className="rounded-2xl border border-slate-200/70 bg-white p-5">
-                <p className="font-extrabold">No active trips</p>
-                <p className="mt-1 text-sm text-slate-600">Accept a request to begin.</p>
-              </div>
-            ) : (
-              active.map((r) => {
-                const ns = nextStatus(r.status);
+        {active.length > 0 && (
+          <div>
+            <h2 className="text-2xl font-black text-white mb-4">🚕 Active Trips</h2>
+            <div className="space-y-4">
+              {active.map((ride) => {
+                const nextStatus = getNextStatus(ride.status);
                 return (
-                  <div key={r.id} className="rounded-2xl border border-slate-200/70 bg-white p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-extrabold">{r.pickup} → {r.destination}</p>
-                        <p className="mt-1 text-sm text-slate-600">
-                          Fare: <span className="font-semibold">{formatMoney(r.estimate)}</span>
-                        </p>
+                  <div key={ride.id} className="rounded-2xl p-6 bg-gradient-to-br from-amber-800/60 to-orange-900/60 border-l-4 border-yellow-500 shadow-xl">
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <p className="text-lg font-black text-white">{ride.status}</p>
+                        <p className="text-sm text-gray-300 mt-1">{ride.pickup} → {ride.destination}</p>
                       </div>
-
-                      <span className={"shrink-0 rounded-full px-3 py-1 text-xs font-extrabold " + pill(r.status)}>
-                        {statusLabel(r.status)}
-                      </span>
+                      <p className="text-2xl font-black text-yellow-400">₦{ride.estimate}</p>
                     </div>
-
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                      <a
-                        href={`/ride/${r.id}`}
-                        className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-extrabold hover:bg-slate-50"
-                      >
-                        Track →
-                      </a>
-
-                      {ns ? (
-                        <button
-                          onClick={() => onAdvanceStatus(r)}
-                          disabled={busyRideId === r.id}
-                          className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-extrabold text-white hover:bg-slate-800 disabled:opacity-60"
-                        >
-                          {busyRideId === r.id ? "Updating…" : `Mark as ${statusLabel(ns)}`}
+                    <div className="flex gap-3">
+                      <a href={`/ride/${ride.id}`} className="flex-1 rounded-xl bg-gray-700 text-white font-bold py-2 text-center hover:bg-gray-600">📍 Track</a>
+                      {nextStatus && (
+                        <button onClick={() => updateStatus(ride.id, nextStatus)} disabled={busyRideId === ride.id} className="flex-1 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-600 text-white font-bold py-2 disabled:opacity-50">
+                          {busyRideId === ride.id ? "Updating..." : `→ ${nextStatus}`}
                         </button>
-                      ) : (
-                        <span className="text-sm text-slate-600 font-semibold">No next action</span>
                       )}
                     </div>
                   </div>
                 );
-              })
-            )}
+              })}
+            </div>
           </div>
-        </section>
+        )}
       </div>
     </main>
   );
