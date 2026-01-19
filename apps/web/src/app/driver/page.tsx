@@ -1,72 +1,94 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { getRides, acceptRide, setRideStatus, type Ride, type RideStatus } from "@/lib/api";
+import React, { useEffect, useMemo, useState } from "react";
+import { acceptRide, getRides, setRideStatus, type Ride, type RideStatus } from "@/lib/api";
 
-
-/* ---------------- helpers ---------------- */
+const TOKEN_KEY = "accessToken"; // change if your login uses a different key
 
 function formatMoney(n: number) {
-  try {
-    return new Intl.NumberFormat("en-NG", {
-      style: "currency",
-      currency: "NGN",
-      maximumFractionDigits: 0,
-    }).format(n);
-  } catch {
-    return `₦${Math.round(n)}`;
-  }
+  return new Intl.NumberFormat("en-NG", {
+    style: "currency",
+    currency: "NGN",
+    maximumFractionDigits: 0,
+  }).format(n);
 }
 
-function statusLabel(s: RideStatus) {
-  switch (s) {
+function statusLabel(s: Ride["status"]) {
+  if (s === "REQUESTED") return "Requested";
+  if (s === "ACCEPTED") return "Accepted";
+  if (s === "ARRIVING") return "Arriving";
+  if (s === "IN_PROGRESS") return "In progress";
+  if (s === "COMPLETED") return "Completed";
+  if (s === "CANCELLED") return "Cancelled";
+  return s;
+}
+
+function pill(status: Ride["status"]) {
+  switch (status) {
     case "REQUESTED":
-      return "Requested";
+      return "bg-blue-50 text-blue-700 ring-1 ring-blue-100";
     case "ACCEPTED":
-      return "Accepted";
+      return "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100";
     case "ARRIVING":
-      return "Arriving";
+      return "bg-sky-50 text-sky-700 ring-1 ring-sky-100";
     case "IN_PROGRESS":
-      return "In Trip";
+      return "bg-slate-900 text-white ring-1 ring-slate-900/20";
     case "COMPLETED":
-      return "Completed";
+      return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100";
     case "CANCELLED":
-      return "Cancelled";
+      return "bg-rose-50 text-rose-700 ring-1 ring-rose-100";
     default:
-      return s;
+      return "bg-slate-50 text-slate-700 ring-1 ring-slate-100";
   }
 }
 
-function statusPillClass(s: RideStatus) {
-  switch (s) {
-    case "REQUESTED":
-      return "bg-blue-50 text-blue-700 border-blue-200";
-    case "ACCEPTED":
-      return "bg-emerald-50 text-emerald-700 border-emerald-200";
-    case "ARRIVING":
-      return "bg-indigo-50 text-indigo-700 border-indigo-200";
-    case "IN_PROGRESS":
-      return "bg-amber-50 text-amber-800 border-amber-200";
-    case "COMPLETED":
-      return "bg-slate-50 text-slate-700 border-slate-200";
-    case "CANCELLED":
-      return "bg-rose-50 text-rose-700 border-rose-200";
-    default:
-      return "bg-slate-50 text-slate-700 border-slate-200";
-  }
+function nextStatus(current: RideStatus): RideStatus | null {
+  if (current === "ACCEPTED") return "ARRIVING";
+  if (current === "ARRIVING") return "IN_PROGRESS";
+  if (current === "IN_PROGRESS") return "COMPLETED";
+  return null;
 }
-
-/* ---------------- page ---------------- */
 
 export default function DriverPage() {
+  const [token, setToken] = useState<string>("");
+  const [driverId, setDriverId] = useState<string>("");
+
   const [rides, setRides] = useState<Ride[]>([]);
   const [loading, setLoading] = useState(true);
+  const [busyRideId, setBusyRideId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
-  async function refresh() {
+  // Load token + user info
+  useEffect(() => {
+    const t = localStorage.getItem(TOKEN_KEY) || "";
+    setToken(t);
+
+    // If your app stores user JSON, we can grab driverId from there
+    // Example: localStorage.setItem("user", JSON.stringify({ id, role }))
+    try {
+      const u = localStorage.getItem("user");
+      if (u) {
+        const parsed = JSON.parse(u);
+        if (parsed?.id) setDriverId(String(parsed.id));
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  async function load(activeToken?: string) {
     try {
       setErr(null);
+      setLoading(true);
+
+      const t = activeToken ?? token;
+      if (!t) {
+        setRides([]);
+        setErr("You are not logged in. Please login as a DRIVER.");
+        return;
+      }
+
       const data = await getRides();
       setRides(Array.isArray(data) ? data : []);
     } catch (e: any) {
@@ -76,264 +98,290 @@ export default function DriverPage() {
     }
   }
 
+  // Load when token becomes available
   useEffect(() => {
-    refresh();
-    const t = setInterval(refresh, 3000);
-    return () => clearInterval(t);
-  }, []);
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+    load(token);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
-  /* -------- derived lists -------- */
+  // Toast auto-hide
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2200);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  // Auto refresh every 8s (nice for driver)
+  useEffect(() => {
+    if (!token) return;
+    const t = setInterval(() => load(token), 8000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   const requested = useMemo(
     () => rides.filter((r) => r.status === "REQUESTED"),
     [rides]
   );
-
   const active = useMemo(
-    () =>
-      rides.filter((r) =>
-        ["ACCEPTED", "ARRIVING", "IN_PROGRESS"].includes(r.status)
-      ),
+    () => rides.filter((r) => r.status !== "REQUESTED" && r.status !== "COMPLETED" && r.status !== "CANCELLED"),
+    [rides]
+  );
+  const recentDone = useMemo(
+    () => rides.filter((r) => r.status === "COMPLETED").slice(0, 10),
     [rides]
   );
 
-  const recent = useMemo(
-    () => rides.filter((r) => ["COMPLETED", "CANCELLED"].includes(r.status)),
-    [rides]
-  );
+  async function onAccept(ride: Ride) {
+    if (!token) {
+      setErr("You are not logged in. Please login again.");
+      return;
+    }
+    if (!driverId) {
+      setErr("Driver ID not found. Please login again (user data missing).");
+      return;
+    }
 
-  /* -------- atomic accept -------- */
+    setBusyRideId(ride.id);
+    setErr(null);
 
-  async function acceptRideHandler(id: string) {
     try {
-      setBusyId(id);
-      setErr(null);
-
-      // ATOMIC: server guarantees only one driver can accept
-      await acceptRide(id, "TOP DRIVE Driver");
-
-      await refresh();
+      await acceptRide(ride.id, driverId);
+      setToast("Ride accepted ✅");
+      await load(token);
+      window.location.href = `/ride/${ride.id}`;
     } catch (e: any) {
       setErr(e?.message ?? "Failed to accept ride");
     } finally {
-      setBusyId(null);
+      setBusyRideId(null);
     }
   }
 
-  /* ---------------- UI ---------------- */
+  async function onAdvanceStatus(ride: Ride) {
+    if (!token) {
+      setErr("You are not logged in. Please login again.");
+      return;
+    }
+
+    const ns = nextStatus(ride.status);
+    if (!ns) return;
+
+    setBusyRideId(ride.id);
+    setErr(null);
+
+    try {
+      await setRideStatus(ride.id, ns);
+      setToast(`Status updated → ${statusLabel(ns)} ✅`);
+      await load(token);
+    } catch (e: any) {
+      setErr(e?.message ?? "Failed to update status");
+    } finally {
+      setBusyRideId(null);
+    }
+  }
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background:
-          "radial-gradient(1200px 600px at 20% 0%, rgba(37,99,235,0.10), transparent 60%), radial-gradient(900px 500px at 80% 10%, rgba(59,130,246,0.10), transparent 55%), #ffffff",
-      }}
-    >
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 16px 56px" }}>
-        {/* Header */}
-        <div
-          style={{
-            display: "flex",
-            gap: 16,
-            alignItems: "center",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            marginBottom: 18,
-          }}
-        >
-          <div>
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "10px 12px",
-                borderRadius: 999,
-                background: "rgba(37,99,235,0.08)",
-                border: "1px solid rgba(37,99,235,0.18)",
-                color: "#1d4ed8",
-                fontWeight: 600,
-                fontSize: 12,
-              }}
-            >
-              <span
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: 999,
-                  background: "#2563eb",
-                  display: "inline-block",
-                }}
-              />
-              Ijebu-Ode • Driver Console
-            </div>
+    <main className="min-h-screen bg-white text-slate-900">
+      {/* Background */}
+      <div className="pointer-events-none fixed inset-0 -z-10">
+        <div className="absolute -top-24 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-emerald-200/40 blur-3xl" />
+        <div className="absolute top-48 -left-24 h-[420px] w-[420px] rounded-full bg-teal-200/35 blur-3xl" />
+        <div className="absolute -bottom-24 right-0 h-[460px] w-[460px] rounded-full bg-sky-200/30 blur-3xl" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(2,6,23,0.05)_1px,transparent_0)] [background-size:18px_18px]" />
+      </div>
 
-            <h1 style={{ margin: "10px 0 6px", fontSize: 28 }}>
-              TOP DRIVE — Driver Dashboard
-            </h1>
-            <p style={{ margin: 0, color: "#475569", maxWidth: 720 }}>
-              Accept rides safely. Updates are live and atomic.
-            </p>
+      {/* Header */}
+      <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/75 backdrop-blur">
+        <div className="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <div className="h-9 w-9 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-600 shadow-sm" />
+              <div className="min-w-0">
+                <h1 className="text-base sm:text-lg font-extrabold tracking-tight truncate">
+                  TOP DRIVE — Driver Dashboard
+                </h1>
+                <p className="text-xs sm:text-sm text-slate-600 truncate">
+                  Accept rides • Update trip status • Track earnings
+                </p>
+              </div>
+            </div>
           </div>
 
           <button
-            onClick={refresh}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 12,
-              border: "1px solid rgba(2,6,23,0.10)",
-              background: "#fff",
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
+            onClick={() => load(token)}
+            className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50"
           >
             Refresh
           </button>
         </div>
+      </header>
 
-        {/* Error */}
+      {/* Toast */}
+      {toast && (
+        <div className="fixed top-20 left-1/2 z-30 -translate-x-1/2">
+          <div className="rounded-2xl bg-slate-900 text-white px-4 py-3 text-sm font-semibold shadow-lg">
+            {toast}
+          </div>
+        </div>
+      )}
+
+      <div className="mx-auto max-w-6xl px-4 py-6 sm:py-10 space-y-6">
         {err && (
-          <div
-            style={{
-              padding: 14,
-              borderRadius: 14,
-              border: "1px solid rgba(244,63,94,0.30)",
-              background: "rgba(244,63,94,0.06)",
-              color: "#9f1239",
-              marginBottom: 16,
-              fontWeight: 600,
-            }}
-          >
+          <div className="rounded-3xl border border-rose-200 bg-rose-50 p-4 text-rose-800 font-semibold">
             {err}
           </div>
         )}
 
-        {/* Content */}
-        {loading ? (
-          <div style={{ padding: 18 }}>Loading rides…</div>
-        ) : (
-          <div style={{ display: "grid", gap: 16 }}>
-            <Section title="New Requests" subtitle="Waiting for a driver">
-              {requested.map((r) => (
-                <RideCard
-                  key={r.id}
-                  ride={r}
-                  primaryAction={{
-                    label: busyId === r.id ? "Accepting…" : "Accept Ride",
-                    onClick: () => acceptRideHandler(r.id),
-                    disabled: busyId !== null,
-                  }}
-                />
-              ))}
-            </Section>
-
-            <Section title="Active" subtitle="Accepted or in progress">
-              {active.map((r) => (
-                <RideCard key={r.id} ride={r} />
-              ))}
-            </Section>
-
-            <Section title="Recent" subtitle="Completed or cancelled">
-              {recent.map((r) => (
-                <RideCard key={r.id} ride={r} />
-              ))}
-            </Section>
+        {/* Quick stats */}
+        <section className="grid gap-4 sm:grid-cols-3">
+          <div className="rounded-3xl border border-slate-200/70 bg-white/85 p-5 shadow-[0_18px_55px_rgba(2,6,23,0.06)]">
+            <p className="text-xs font-bold tracking-wider text-slate-500">REQUESTS</p>
+            <p className="mt-2 text-3xl font-extrabold">{requested.length}</p>
+            <p className="mt-1 text-sm text-slate-600">Available to accept now</p>
           </div>
-        )}
+
+          <div className="rounded-3xl border border-slate-200/70 bg-white/85 p-5 shadow-[0_18px_55px_rgba(2,6,23,0.06)]">
+            <p className="text-xs font-bold tracking-wider text-slate-500">ACTIVE</p>
+            <p className="mt-2 text-3xl font-extrabold">{active.length}</p>
+            <p className="mt-1 text-sm text-slate-600">Accepted / In progress</p>
+          </div>
+
+          <div className="rounded-3xl border border-slate-200/70 bg-white/85 p-5 shadow-[0_18px_55px_rgba(2,6,23,0.06)]">
+            <p className="text-xs font-bold tracking-wider text-slate-500">RECENT COMPLETED</p>
+            <p className="mt-2 text-3xl font-extrabold">{recentDone.length}</p>
+            <p className="mt-1 text-sm text-slate-600">Last 10 completed rides</p>
+          </div>
+        </section>
+
+        {/* Requests */}
+        <section className="rounded-3xl border border-slate-200/70 bg-white/85 p-5 sm:p-7 shadow-[0_18px_55px_rgba(2,6,23,0.06)]">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl sm:text-2xl font-extrabold">Available Requests</h2>
+              <p className="text-sm text-slate-600">Accept a request to start.</p>
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {loading ? (
+              <>
+                <div className="h-20 rounded-2xl bg-slate-100 animate-pulse" />
+                <div className="h-20 rounded-2xl bg-slate-100 animate-pulse" />
+                <div className="h-20 rounded-2xl bg-slate-100 animate-pulse" />
+              </>
+            ) : requested.length === 0 ? (
+              <div className="rounded-2xl border border-slate-200/70 bg-white p-5">
+                <p className="font-extrabold">No requests right now</p>
+                <p className="mt-1 text-sm text-slate-600">Keep this page open. It refreshes automatically.</p>
+              </div>
+            ) : (
+              requested.map((r) => (
+                <div
+                  key={r.id}
+                  className="rounded-2xl border border-slate-200/70 bg-white p-4 hover:shadow-[0_10px_20px_rgba(2,6,23,0.06)] transition"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-extrabold text-slate-900 break-words">
+                        {r.pickup} → {r.destination}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        City: <span className="font-semibold">{r.city}</span> • Fare:{" "}
+                        <span className="font-semibold">{formatMoney(r.estimate)}</span>
+                      </p>
+                    </div>
+
+                    <span
+                      className={
+                        "shrink-0 rounded-full px-3 py-1 text-xs font-extrabold " + pill(r.status)
+                      }
+                    >
+                      {statusLabel(r.status)}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                    <a
+                      href={`/ride/${r.id}`}
+                      className="rounded-2xl bg-slate-900 px-3 py-2 text-sm font-extrabold text-white hover:bg-slate-800"
+                    >
+                      View →
+                    </a>
+
+                    <button
+                      onClick={() => onAccept(r)}
+                      disabled={busyRideId === r.id}
+                      className="rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2 text-sm font-extrabold text-white hover:opacity-95 disabled:opacity-60"
+                    >
+                      {busyRideId === r.id ? "Accepting…" : "Accept Ride"}
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        {/* Active rides */}
+        <section className="rounded-3xl border border-slate-200/70 bg-white/85 p-5 sm:p-7 shadow-[0_18px_55px_rgba(2,6,23,0.06)]">
+          <h2 className="text-xl sm:text-2xl font-extrabold">My Active Trips</h2>
+          <p className="text-sm text-slate-600 mt-1">Advance status as you move.</p>
+
+          <div className="mt-4 space-y-3">
+            {active.length === 0 ? (
+              <div className="rounded-2xl border border-slate-200/70 bg-white p-5">
+                <p className="font-extrabold">No active trips</p>
+                <p className="mt-1 text-sm text-slate-600">Accept a request to begin.</p>
+              </div>
+            ) : (
+              active.map((r) => {
+                const ns = nextStatus(r.status);
+                return (
+                  <div key={r.id} className="rounded-2xl border border-slate-200/70 bg-white p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-extrabold">{r.pickup} → {r.destination}</p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          Fare: <span className="font-semibold">{formatMoney(r.estimate)}</span>
+                        </p>
+                      </div>
+
+                      <span className={"shrink-0 rounded-full px-3 py-1 text-xs font-extrabold " + pill(r.status)}>
+                        {statusLabel(r.status)}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                      <a
+                        href={`/ride/${r.id}`}
+                        className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-extrabold hover:bg-slate-50"
+                      >
+                        Track →
+                      </a>
+
+                      {ns ? (
+                        <button
+                          onClick={() => onAdvanceStatus(r)}
+                          disabled={busyRideId === r.id}
+                          className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-extrabold text-white hover:bg-slate-800 disabled:opacity-60"
+                        >
+                          {busyRideId === r.id ? "Updating…" : `Mark as ${statusLabel(ns)}`}
+                        </button>
+                      ) : (
+                        <span className="text-sm text-slate-600 font-semibold">No next action</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </section>
       </div>
-    </div>
-  );
-}
-
-/* ---------------- components ---------------- */
-
-function Section({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle: string;
-  children: React.ReactNode;
-}) {
-  const isEmpty = !children || (Array.isArray(children) && children.length === 0);
-
-  return (
-    <div
-      style={{
-        padding: 16,
-        borderRadius: 20,
-        border: "1px solid rgba(2,6,23,0.08)",
-        background: "#fff",
-      }}
-    >
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 16, fontWeight: 800 }}>{title}</div>
-        <div style={{ color: "#64748b", fontSize: 13 }}>{subtitle}</div>
-      </div>
-
-      {isEmpty ? (
-        <div style={{ color: "#64748b", fontWeight: 600 }}>
-          No rides here yet.
-        </div>
-      ) : (
-        <div style={{ display: "grid", gap: 12 }}>{children}</div>
-      )}
-    </div>
-  );
-}
-
-function RideCard({
-  ride,
-  primaryAction,
-}: {
-  ride: Ride;
-  primaryAction?: { label: string; onClick: () => void; disabled?: boolean };
-}) {
-  return (
-    <div
-      style={{
-        padding: 14,
-        borderRadius: 18,
-        border: "1px solid rgba(2,6,23,0.08)",
-        background: "#fff",
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between" }}>
-        <strong>
-          {ride.pickup} → {ride.destination}
-        </strong>
-        <span
-          className={statusPillClass(ride.status)}
-          style={{ padding: "4px 10px", borderRadius: 999, border: "1px solid" }}
-        >
-          {statusLabel(ride.status)}
-        </span>
-      </div>
-
-      <div style={{ marginTop: 6, color: "#475569" }}>
-        Estimate: {formatMoney(ride.estimate)}
-        {ride.driverName ? ` • Driver: ${ride.driverName}` : ""}
-      </div>
-
-      {primaryAction && (
-        <button
-          onClick={primaryAction.onClick}
-          disabled={primaryAction.disabled}
-          style={{
-            marginTop: 10,
-            padding: "10px 14px",
-            borderRadius: 14,
-            background: primaryAction.disabled ? "#cbd5f5" : "#2563eb",
-            color: "#fff",
-            fontWeight: 900,
-            cursor: primaryAction.disabled ? "not-allowed" : "pointer",
-          }}
-        >
-          {primaryAction.label}
-        </button>
-      )}
-    </div>
+    </main>
   );
 }

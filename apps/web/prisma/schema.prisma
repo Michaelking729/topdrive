@@ -16,6 +16,18 @@ generator client {
 // =======================
 // Ride Status Lifecycle
 // =======================
+// =======================
+// User Roles
+// =======================
+enum UserRole {
+  CLIENT
+  DRIVER
+  ADMIN
+}
+
+// =======================
+// Ride Status Lifecycle
+// =======================
 enum RideStatus {
   REQUESTED     // Rider created request
   ACCEPTED      // Driver accepted
@@ -50,4 +62,48 @@ model Ride {
   // Timestamps
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
+}
+
+// =======================
+// User Model
+// =======================
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  role         UserRole @default(CLIENT)
+
+  // Profiles
+  clientProfile  ClientProfile?
+  driverProfile  DriverProfile?
+
+  // Timestamps
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// =======================
+// Client Profile
+// =======================
+model ClientProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rating    Float?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// =======================
+// Driver Profile
+// =======================
+model DriverProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isVerified  Boolean  @default(false)
+  rating      Float?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
