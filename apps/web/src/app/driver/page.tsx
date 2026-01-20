@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { getAccessToken, getUser, logout } from "@/lib/session";
 
 export default function DriverPage() {
@@ -15,6 +15,8 @@ export default function DriverPage() {
   const token = getAccessToken();
   const user = getUser();
   const [sharingLocation, setSharingLocation] = useState(false);
+  const [incomingPing, setIncomingPing] = useState<{ rideId: string; message?: string; from?: any } | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
   function hashToLatLng(s: string) {
     let h = 0;
@@ -104,17 +106,23 @@ export default function DriverPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-    // Additionally connect to WebSocket server (same origin, single-port)
+  // Additionally connect to WebSocket server (same origin, single-port)
   useEffect(() => {
     let ws: WebSocket | null = null;
     try {
-      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      const proto = window.location.protocol === "https:" ? "wss" : "ws";
       const url = `${proto}://${window.location.host}/ws`;
       ws = new WebSocket(url);
+      wsRef.current = ws;
       ws.onmessage = (ev) => {
         try {
           const msg = JSON.parse(ev.data);
           if (msg?.event && msg?.data) {
+            if (msg.event === "driver-ping") {
+              const data = msg.data;
+              setIncomingPing({ rideId: data.rideId, message: data.message, from: data.from });
+              return;
+            }
             const data = msg.data;
             setRides((cur) => [data, ...cur.filter((r) => r.id !== data.id)].slice(0, 50));
           }
@@ -122,11 +130,13 @@ export default function DriverPage() {
       };
       ws.onclose = () => {
         ws = null;
+        wsRef.current = null;
       };
     } catch {}
     return () => {
       try {
         ws?.close();
+        wsRef.current = null;
       } catch {}
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
