@@ -1,6 +1,7 @@
 import { WebSocketServer } from "ws";
 import jwt from "jsonwebtoken";
 import { prisma } from "@/lib/prisma";
+import { broadcastEvent } from "@/lib/rideStream";
 
 const PORT = Number(process.env.WS_PORT || 4001);
 const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || "";
@@ -75,6 +76,44 @@ export function ensureWSS() {
       try {
         (ws as any).user = user;
         ws.send(JSON.stringify({ event: "connected", data: { time: Date.now(), user: { id: user.id, role: user.role } } }));
+        // handle incoming messages from driver clients
+        ws.on("message", async (raw) => {
+          try {
+            const msg = typeof raw === "string" ? JSON.parse(raw) : JSON.parse(raw.toString());
+            if (!msg || !msg.event) return;
+
+            // Accept ride via websocket for low-latency matching
+            if (msg.event === "accept-ride" && msg.data && msg.data.rideId) {
+              const rideId = msg.data.rideId as string;
+              const driverName = (msg.data.driverName as string) || (user.name || user.email || "Driver");
+
+              // atomic update: only accept if still REQUESTED
+              const updated = await prisma.ride.updateMany({ where: { id: rideId, status: "REQUESTED" }, data: { status: "ACCEPTED", driverName } });
+              if (updated.count === 0) {
+                // fetch current state and notify requester
+                const exists = await prisma.ride.findUnique({ where: { id: rideId } });
+                // broadcast ride-updated so clients refresh
+                if (exists) {
+                  broadcastEvent("ride-updated", exists);
+                  try {
+                    broadcastWS({ event: "ride-updated", data: exists });
+                  } catch {}
+                }
+                return;
+              }
+
+              const ride = await prisma.ride.findUnique({ where: { id: rideId } });
+              if (ride) {
+                broadcastEvent("ride-updated", ride);
+                try {
+                  broadcastWS({ event: "ride-updated", data: ride });
+                } catch {}
+              }
+            }
+          } catch (e) {
+            // ignore malformed messages
+          }
+        });
       } catch {}
     } catch (e) {
       try {

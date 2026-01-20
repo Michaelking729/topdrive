@@ -62,6 +62,7 @@ export default function RequestPage() {
 
   const [rides, setRides] = useState<Ride[]>([]);
   const [drivers, setDrivers] = useState<Array<{ id: string; name?: string; lat: number; lng: number; available?: boolean }>>([]);
+  const [selectedDriver, setSelectedDriver] = useState<string | null>(null);
   const [driverStreamConnected, setDriverStreamConnected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -238,10 +239,60 @@ export default function RequestPage() {
                   else setDestination(text);
                 }}
                 onDriverSelect={(id) => {
-                  const d = drivers.find((x) => x.id === id);
-                  setToast(d ? `Driver ${d.name || d.id} selected — request them via Support` : `Driver ${id} selected`);
+                  setSelectedDriver(id);
                 }}
               />
+
+              {/* driver details drawer */}
+              {selectedDriver && (
+                <div className="fixed right-6 bottom-6 z-40 w-80 rounded-2xl bg-white shadow-xl border p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-extrabold">{drivers.find((d) => d.id === selectedDriver)?.name || selectedDriver}</p>
+                      <p className="text-xs text-slate-500">Driver • {drivers.find((d) => d.id === selectedDriver)?.available ? 'Available' : 'Busy'}</p>
+                    </div>
+                    <button onClick={() => setSelectedDriver(null)} className="text-sm text-slate-400">Close</button>
+                  </div>
+                  <div className="mt-3 text-sm text-slate-600">
+                    <p>Tap below to request this driver directly. This will create your ride and ping the driver.</p>
+                  </div>
+                  <div className="mt-4">
+                    <button
+                      onClick={async () => {
+                        try {
+                          setBusy(true);
+                          const p = pickup.trim();
+                          const d = destination.trim();
+                          if (!p || !d) {
+                            setErr("Pickup and destination are required.");
+                            return;
+                          }
+                          const ride = await createRide({ pickup: p, destination: d, estimate, city: CITY });
+                          // ping driver
+                          await fetch(`/api/drivers/ping`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ driverId: selectedDriver, rideId: ride.id, message: 'You have a direct request' })
+                          });
+                          setToast('Requested driver — waiting for them to accept');
+                          setPickup('');
+                          setDestination('');
+                          setSelectedDriver(null);
+                          await load();
+                          window.location.href = `/ride/${ride.id}`;
+                        } catch (e: any) {
+                          setErr(e?.message || 'Failed to request driver');
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                      className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-white font-bold"
+                    >
+                      Request this driver
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
             <p className="text-xs font-bold tracking-wider text-blue-700">
               QUICK REQUEST • AUTO PRICING

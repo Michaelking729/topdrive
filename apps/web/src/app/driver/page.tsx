@@ -132,15 +132,14 @@ export default function DriverPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Broadcast simulated GPS to server when online and sharingLocation
+  // Broadcast GPS to server when online and sharingLocation — prefer real Geolocation
   useEffect(() => {
     let intv: ReturnType<typeof setInterval> | null = null;
-    const sendLocation = async () => {
+    let watchId: number | null = null;
+
+    const postLocation = async (lat: number, lng: number) => {
       try {
         const id = user?.id || "driver-demo";
-        const base = hashToLatLng(id + (Math.floor(Math.random() * 1000)).toString());
-        const lat = base.lat + (Math.random() - 0.5) * 0.02;
-        const lng = base.lng + (Math.random() - 0.5) * 0.02;
         await fetch(`/api/drivers/location`, {
           method: "POST",
           headers: { "Content-Type": "application/json", authorization: `Bearer ${token}` },
@@ -151,14 +150,45 @@ export default function DriverPage() {
       }
     };
 
+    const startSimulation = () => {
+      intv = setInterval(async () => {
+        const id = user?.id || "driver-demo";
+        const base = hashToLatLng(id + (Math.floor(Math.random() * 1000)).toString());
+        const lat = base.lat + (Math.random() - 0.5) * 0.02;
+        const lng = base.lng + (Math.random() - 0.5) * 0.02;
+        await postLocation(lat, lng);
+      }, 3000);
+    };
+
     if (isOnline && sharingLocation) {
-      // send immediately then every 3s
-      sendLocation();
-      intv = setInterval(sendLocation, 3000);
+      if (typeof navigator !== "undefined" && navigator.geolocation && navigator.geolocation.watchPosition) {
+        try {
+          // request high-accuracy updates
+          watchId = navigator.geolocation.watchPosition(
+            (pos) => {
+              postLocation(pos.coords.latitude, pos.coords.longitude);
+            },
+            (err) => {
+              // on error (permission denied, etc) fall back to simulation
+              if (intv == null) startSimulation();
+            },
+            { enableHighAccuracy: true, maximumAge: 2000, timeout: 5000 }
+          );
+        } catch (e) {
+          startSimulation();
+        }
+      } else {
+        startSimulation();
+      }
     }
 
     return () => {
       if (intv) clearInterval(intv);
+      if (watchId !== null && typeof navigator !== "undefined" && navigator.geolocation) {
+        try {
+          navigator.geolocation.clearWatch(watchId as number);
+        } catch {}
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOnline, sharingLocation, user?.id]);
