@@ -12,6 +12,19 @@ export function signAccessToken(userId: string) {
   return jwt.sign({ sub: userId }, ACCESS_SECRET, { expiresIn: ACCESS_EXPIRES_IN } as SignOptions);
 }
 
+export function getAccessTokenTTLSeconds() {
+  const s = (process.env.ACCESS_TOKEN_EXPIRES || "15m").trim();
+  const last = s[s.length - 1];
+  const num = Number(s.slice(0, s.length - 1));
+  if (!isNaN(Number(s))) return Number(s);
+  if (last === "s") return isNaN(num) ? 900 : num;
+  if (last === "m") return isNaN(num) ? 60 * 15 : num * 60;
+  if (last === "h") return isNaN(num) ? 60 * 60 * 1 : num * 60 * 60;
+  if (last === "d") return isNaN(num) ? 60 * 60 * 24 : num * 60 * 60 * 24;
+  // fallback minutes
+  return 60 * 15;
+}
+
 export async function requireAuth(req: NextRequest) {
   const authHeader = req.headers.get("authorization") || "";
   const headerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";

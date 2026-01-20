@@ -51,14 +51,19 @@ export async function POST(req: NextRequest) {
     );
 
     // set httpOnly cookie for browser-based auth
-    const maxAge = 60 * 15; // 15 minutes
-    res.cookies.set("accessToken", accessToken, {
-      httpOnly: true,
-      path: "/",
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge,
-    });
+    try {
+      const { getAccessTokenTTLSeconds } = await import("@/lib/auth");
+      const maxAge = getAccessTokenTTLSeconds();
+      res.cookies.set("accessToken", accessToken, {
+        httpOnly: true,
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge,
+      });
+    } catch {
+      res.cookies.set("accessToken", accessToken, { httpOnly: true, path: "/" });
+    }
 
     return res;
   } catch (e: any) {
