@@ -76,6 +76,16 @@ export function ensureWSS() {
       try {
         (ws as any).user = user;
         ws.send(JSON.stringify({ event: "connected", data: { time: Date.now(), user: { id: user.id, role: user.role } } }));
+        // deliver any queued driver notifications from DB
+        try {
+          const pending = await prisma.driverNotification.findMany({ where: { driverId: user.id, delivered: false } });
+          for (const n of pending) {
+            try {
+              ws.send(JSON.stringify({ event: "driver-ping", data: { rideId: n.rideId, message: n.message, from: null } }));
+              await prisma.driverNotification.update({ where: { id: n.id }, data: { delivered: true, deliveredAt: new Date() } });
+            } catch (e) {}
+          }
+        } catch (e) {}
         // handle incoming messages from driver clients
         ws.on("message", async (raw) => {
           try {
@@ -150,6 +160,16 @@ export function wssCount() {
   return wss ? wss.clients.size : 0;
 }
 
+export function isUserConnected(userId: string) {
+  try {
+    ensureWSS();
+    for (const c of Array.from(wss!.clients) as any[]) {
+      if ((c as any).user && (c as any).user.id === userId && c.readyState === 1) return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
 export function attachWSSToServer(server: any, path = "/ws") {
   if (wss) return wss;
   wss = new WebSocketServer({ server, path });
@@ -203,6 +223,16 @@ export function attachWSSToServer(server: any, path = "/ws") {
       try {
         (ws as any).user = user;
         ws.send(JSON.stringify({ event: "connected", data: { time: Date.now(), user: { id: user.id, role: user.role } } }));
+        // deliver pending notifications
+        try {
+          const pending = await prisma.driverNotification.findMany({ where: { driverId: user.id, delivered: false } });
+          for (const n of pending) {
+            try {
+              ws.send(JSON.stringify({ event: "driver-ping", data: { rideId: n.rideId, message: n.message, from: null } }));
+              await prisma.driverNotification.update({ where: { id: n.id }, data: { delivered: true, deliveredAt: new Date() } });
+            } catch (e) {}
+          }
+        } catch (e) {}
       } catch {}
     } catch (e) {
       try {

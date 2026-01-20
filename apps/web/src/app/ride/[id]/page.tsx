@@ -154,6 +154,34 @@ export default function RideTrackingPage() {
   // Simulate driver position when arriving or in-progress
   const [driverPos, setDriverPos] = useState<{ lat: number; lng: number } | null>(null);
 
+  function haversine(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+    const toRad = (v: number) => (v * Math.PI) / 180;
+    const R = 6371; // km
+    const dLat = toRad(b.lat - a.lat);
+    const dLon = toRad(b.lng - a.lng);
+    const lat1 = toRad(a.lat);
+    const lat2 = toRad(b.lat);
+    const sinDlat = Math.sin(dLat / 2);
+    const sinDlon = Math.sin(dLon / 2);
+    const aHar = sinDlat * sinDlat + sinDlon * sinDlon * Math.cos(lat1) * Math.cos(lat2);
+    const c = 2 * Math.atan2(Math.sqrt(aHar), Math.sqrt(1 - aHar));
+    return R * c;
+  }
+
+  const driverETA = useMemo(() => {
+    if (!driverPos || !ride) return null;
+    // compute distance to pickup
+    const hash = (s: string) => {
+      let h = 0;
+      for (let i = 0; i < s.length; i++) h = (h << 5) - h + s.charCodeAt(i);
+      return h;
+    };
+    const pickup = { lat: 6 + ((hash(ride.pickup) % 1000) / 1000) * 0.3, lng: 3 + (((hash(ride.pickup) >> 2) % 1000) / 1000) * 0.3 };
+    const distKm = haversine(driverPos, pickup);
+    const mins = Math.max(1, Math.round((distKm / 30) * 60));
+    return { mins, distKm };
+  }, [driverPos, ride]);
+
   useEffect(() => {
     if (!ride) return;
     let anim: ReturnType<typeof setInterval> | null = null;
@@ -292,7 +320,7 @@ export default function RideTrackingPage() {
 
                 {ride.driverName ? (
                   <span className="rounded-full bg-indigo-50 px-3 py-1 text-sm font-semibold text-indigo-700 ring-1 ring-indigo-100">
-                    Driver: {ride.driverName}
+                    Driver: {ride.driverName}{driverETA ? ` • ETA ${driverETA.mins} min` : ''}
                   </span>
                 ) : (
                   <span className="rounded-full bg-slate-50 px-3 py-1 text-sm font-semibold text-slate-600 ring-1 ring-slate-200">

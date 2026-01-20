@@ -104,6 +104,31 @@ model DriverProfile {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   isVerified  Boolean  @default(false)
   rating      Float?
+  vehicle     String?
+  plate       String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// Persisted driver locations for history
+model DriverLocation {
+  id        String   @id @default(cuid())
+  driverId  String
+  lat       Float
+  lng       Float
+  ts        DateTime @default(now())
+
+  @@index([driverId, ts])
+}
+
+// Notifications queued for drivers when offline
+model DriverNotification {
+  id        String   @id @default(cuid())
+  driverId  String
+  rideId    String
+  message   String
+  delivered Boolean  @default(false)
+  createdAt DateTime @default(now())
+  deliveredAt DateTime?
+  @@index([driverId, delivered])
 }

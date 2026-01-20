@@ -15,6 +15,8 @@ export default function DriverPage() {
   const token = getAccessToken();
   const user = getUser();
   const [sharingLocation, setSharingLocation] = useState(false);
+  const [vehicle, setVehicle] = useState<string | null>(null);
+  const [plate, setPlate] = useState<string | null>(null);
   const [incomingPing, setIncomingPing] = useState<{ rideId: string; message?: string; from?: any } | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -48,6 +50,14 @@ export default function DriverPage() {
         cache: "no-store",
       }).then((r) => r.json());
       setWallet(walletRes);
+      // load driver profile
+      try {
+        const prof = await fetch('/api/me/driver-profile', { headers: { authorization: `Bearer ${token}` } }).then(r => r.json()).catch(() => null);
+        if (prof) {
+          setVehicle(prof.vehicle || null);
+          setPlate(prof.plate || null);
+        }
+      } catch {}
     } catch (e: any) {
       setErr(e?.message);
     } finally {
@@ -351,6 +361,27 @@ export default function DriverPage() {
               <p className="text-3xl font-black mt-2">{completed.length}</p>
               <p className="text-xs opacity-70 mt-1">Rides</p>
             </div>
+          </div>
+        </div>
+
+        {/* Driver profile edit */}
+        <div className="rounded-3xl border border-slate-200/70 bg-white/85 p-5 sm:p-7 shadow-[0_18px_55px_rgba(2,6,23,0.06)]">
+          <h3 className="text-lg font-extrabold text-slate-900">Vehicle</h3>
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <input value={vehicle ?? ''} onChange={(e)=>setVehicle(e.target.value)} placeholder="e.g. Toyota Corolla 2018" className="rounded-2xl border p-3" />
+            <input value={plate ?? ''} onChange={(e)=>setPlate(e.target.value)} placeholder="Plate number" className="rounded-2xl border p-3" />
+          </div>
+          <div className="mt-3 flex gap-3">
+            <button onClick={async ()=>{
+              try {
+                setLoading(true);
+                const res = await fetch('/api/me/driver-profile', { method: 'PATCH', headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ vehicle, plate }) });
+                if (!res.ok) throw new Error('Save failed');
+                setToast('Profile saved');
+                await load();
+              } catch (e:any) { setErr(e.message); } finally { setLoading(false); }
+            }} className="rounded-2xl bg-blue-600 text-white px-4 py-2">Save</button>
+            <button onClick={()=>{ setVehicle(null); setPlate(null); }} className="rounded-2xl bg-gray-100 px-4 py-2">Clear</button>
           </div>
         </div>
 
