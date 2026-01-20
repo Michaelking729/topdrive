@@ -1,3 +1,14 @@
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+
+export async function GET() {
+  const usersCount = await prisma.user.count();
+  const driversCount = await prisma.user.count({ where: { role: 'DRIVER' } });
+  const ridesCount = await prisma.ride.count();
+  const activeRides = await prisma.ride.count({ where: { status: 'IN_PROGRESS' } });
+  const pendingNotifications = await prisma.driverNotification.count({ where: { delivered: false } });
+  return NextResponse.json({ usersCount, driversCount, ridesCount, activeRides, pendingNotifications });
+}
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, requireRole } from "@/lib/auth";

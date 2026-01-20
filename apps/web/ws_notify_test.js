@@ -23,10 +23,37 @@ async function main() {
     }
 
     const token = jwt.sign({ sub: driver.id }, secret, { expiresIn: '15m' });
-    const wsUrl = `ws://localhost:${process.env.WS_PORT || 4001}/?token=${encodeURIComponent(token)}`;
-    console.log('Connecting to', wsUrl);
-
-    const ws = new WebSocket(wsUrl);
+    const candidates = [
+      `ws://localhost:${process.env.WS_PORT || 4001}/?token=${encodeURIComponent(token)}`,
+      `ws://localhost:3000/ws?token=${encodeURIComponent(token)}`,
+      `ws://localhost:3000/?token=${encodeURIComponent(token)}`,
+    ];
+    console.log('Trying WS endpoints in order:', candidates);
+    let ws;
+    for (const u of candidates) {
+      try {
+        ws = new WebSocket(u);
+        console.log('Attempting', u);
+        // wait briefly for open or error
+        await new Promise((res, rej) => {
+          const onOpen = () => { ws.off('error', onErr); res(true); };
+          const onErr = (e) => { ws.off('open', onOpen); rej(e); };
+          ws.once('open', onOpen);
+          ws.once('error', onErr);
+          setTimeout(() => { rej(new Error('timeout')); }, 1200);
+        });
+        console.log('Connected to', u);
+        break;
+      } catch (e) {
+        try { ws && ws.terminate(); } catch {}
+        console.log('Failed to connect to', u, e && e.message);
+        ws = null;
+      }
+    }
+    if (!ws) {
+      console.error('All WS connection attempts failed');
+      process.exit(2);
+    }
 
     ws.on('open', () => {
       console.log('WS open');

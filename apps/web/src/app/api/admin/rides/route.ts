@@ -1,3 +1,10 @@
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+
+export async function GET() {
+  const rides = await prisma.ride.findMany({ orderBy: { createdAt: 'desc' }, take: 200 });
+  return NextResponse.json(rides);
+}
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, requireRole } from "@/lib/auth";
