@@ -65,16 +65,23 @@ export default function MapLeaflet({
     const pk = pickup ? hashToLatLng(pickup) : null;
     const ds = destination ? hashToLatLng(destination) : null;
 
-    // helper to set marker
+    // helper to set marker (uses circleMarker for reliable styling)
+    const colorMap: Record<string, string> = { blue: "#2563eb", green: "#10b981", yellow: "#f59e0b", gray: "#9ca3af" };
     const setMarker = (key: string, latlng: [number, number], color = "blue", title?: string, onClick?: () => void) => {
       if (markersRef.current[key]) {
         markersRef.current[key].setLatLng(latlng);
       } else {
-        const el = L.divIcon({ className: `rounded-full w-4 h-4 bg-${color}-500` });
-        const m = L.marker(latlng as any, { title: title || key });
-        m.addTo(map);
-        if (onClick) m.on("click", onClick);
-        markersRef.current[key] = m;
+        const circle = L.circleMarker(latlng as any, {
+          radius: 6,
+          color: colorMap[color] || colorMap.blue,
+          fillColor: colorMap[color] || colorMap.blue,
+          fillOpacity: 1,
+          weight: 1,
+        });
+        circle.addTo(map);
+        if (onClick) circle.on("click", onClick);
+        if (title) circle.bindTooltip(title, { direction: "top", offset: [0, -8] });
+        markersRef.current[key] = circle;
       }
     };
 
@@ -119,7 +126,7 @@ export default function MapLeaflet({
     if (ds) bounds.push([ds.lat, ds.lng]);
     if (driverPos) bounds.push([driverPos.lat, driverPos.lng]);
     if (bounds.length > 0) map.fitBounds(bounds as any, { padding: [50, 50] });
-  }, [pickup, destination, driverPos, onPick]);
+  }, [pickup, destination, driverPos, drivers, onPick, onDriverSelect]);
 
   return <div ref={ref} className="w-full rounded-2xl h-64 overflow-hidden" />;
 }

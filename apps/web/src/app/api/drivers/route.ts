@@ -21,6 +21,10 @@ export async function GET() {
       lat: pos.lat + (Math.random() - 0.5) * 0.02,
       lng: pos.lng + (Math.random() - 0.5) * 0.02,
       available: Math.random() > 0.2,
+      vehicle: `${["Toyota Corolla","Kia Picanto","Honda Civic","Toyota Sienna","Hyundai Accent"][i % 5]} (${2015 + (i % 8)})`,
+      rating: Math.round((3.5 + Math.random() * 1.5) * 10) / 10,
+      trips: 50 + Math.floor(Math.random() * 400),
+      phone: `+23480${10000000 + i}`,
     };
   });
 

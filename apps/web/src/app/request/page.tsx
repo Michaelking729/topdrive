@@ -62,7 +62,7 @@ export default function RequestPage() {
   const [destination, setDestination] = useState("");
 
   const [rides, setRides] = useState<Ride[]>([]);
-  const [drivers, setDrivers] = useState<Array<{ id: string; name?: string; lat: number; lng: number; available?: boolean }>>([]);
+  const [drivers, setDrivers] = useState<Array<{ id: string; name?: string; lat: number; lng: number; available?: boolean; vehicle?: string; rating?: number; trips?: number; phone?: string }>>([]);
   const [selectedDriver, setSelectedDriver] = useState<string | null>(null);
   const [driverStreamConnected, setDriverStreamConnected] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -96,6 +96,37 @@ export default function RequestPage() {
       // ignore for now
     }
   }
+
+  function hashToLatLng(s: string) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h << 5) - h + s.charCodeAt(i);
+    const lat = 6 + ((h % 1000) / 1000) * 0.3;
+    const lng = 3 + (((h >> 2) % 1000) / 1000) * 0.3;
+    return { lat, lng };
+  }
+
+  function haversine(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+    const toRad = (v: number) => (v * Math.PI) / 180;
+    const R = 6371; // km
+    const dLat = toRad(b.lat - a.lat);
+    const dLon = toRad(b.lng - a.lng);
+    const lat1 = toRad(a.lat);
+    const lat2 = toRad(b.lat);
+    const sinDlat = Math.sin(dLat / 2);
+    const sinDlon = Math.sin(dLon / 2);
+    const aHar = sinDlat * sinDlat + sinDlon * sinDlon * Math.cos(lat1) * Math.cos(lat2);
+    const c = 2 * Math.atan2(Math.sqrt(aHar), Math.sqrt(1 - aHar));
+    return R * c;
+  }
+
+  const selectedDriverObj = useMemo(() => drivers.find((d) => d.id === selectedDriver) || null, [drivers, selectedDriver]);
+  const selectedDriverETA = useMemo(() => {
+    if (!selectedDriverObj) return null;
+    const pk = pickup ? hashToLatLng(pickup) : { lat: 6.5, lng: 3.5 };
+    const distKm = haversine(pk, { lat: selectedDriverObj.lat, lng: selectedDriverObj.lng });
+    const mins = Math.max(1, Math.round((distKm / 30) * 60));
+    return { mins, distKm };
+  }, [selectedDriverObj, pickup]);
 
   useEffect(() => {
     // Subscribe to driver location SSE for real-time updates
@@ -249,13 +280,43 @@ export default function RequestPage() {
                 <div className="fixed right-6 bottom-6 z-40 w-80 rounded-2xl bg-white shadow-xl border p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-extrabold">{drivers.find((d) => d.id === selectedDriver)?.name || selectedDriver}</p>
-                      <p className="text-xs text-slate-500">Driver • {drivers.find((d) => d.id === selectedDriver)?.available ? 'Available' : 'Busy'}</p>
+                      <p className="font-extrabold">{selectedDriverObj?.name || selectedDriver}</p>
+                      <p className="text-xs text-slate-500">{selectedDriverObj?.vehicle || ''} • {selectedDriverObj?.available ? 'Available' : 'Busy'}</p>
                     </div>
-                    <button onClick={() => setSelectedDriver(null)} className="text-sm text-slate-400">Close</button>
+                    <div className="flex items-center gap-2">
+                      <div className="text-right">
+                        <div className="text-sm font-bold">{selectedDriverObj?.rating ?? '—'} ⭐</div>
+                        <div className="text-xs text-slate-400">{selectedDriverObj?.trips ?? 0} trips</div>
+                      </div>
+                      <button onClick={() => setSelectedDriver(null)} className="text-sm text-slate-400">Close</button>
+                    </div>
                   </div>
                   <div className="mt-3 text-sm text-slate-600">
                     <p>Tap below to request this driver directly. This will create your ride and ping the driver.</p>
+                    {selectedDriverETA && (
+                      <p className="mt-2 text-sm text-slate-700">ETA: <span className="font-extrabold">{selectedDriverETA.mins} min</span> • {(selectedDriverETA.distKm).toFixed(2)} km</p>
+                    )}
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <a href={`tel:${selectedDriverObj?.phone || ''}`} className="flex-1 rounded-2xl bg-gray-100 px-3 py-2 text-center text-sm">Call</a>
+                    <button
+                      onClick={() => {
+                        try {
+                          const key = 'fav-drivers';
+                          const raw = localStorage.getItem(key) || '[]';
+                          const arr = JSON.parse(raw) as string[];
+                          if (!selectedDriver) return;
+                          const idx = arr.indexOf(selectedDriver);
+                          if (idx >= 0) arr.splice(idx, 1);
+                          else arr.push(selectedDriver);
+                          localStorage.setItem(key, JSON.stringify(arr));
+                          setToast(idx >= 0 ? 'Removed favorite' : 'Saved favorite');
+                        } catch {}
+                      }}
+                      className="rounded-2xl bg-white border px-3 py-2 text-sm"
+                    >
+                      ☆ Favorite
+                    </button>
                   </div>
                   <div className="mt-4">
                     <button
@@ -265,7 +326,7 @@ export default function RequestPage() {
                           const p = pickup.trim();
                           const d = destination.trim();
                           if (!p || !d) {
-                            setErr("Pickup and destination are required.");
+                            setErr('Pickup and destination are required.');
                             return;
                           }
                           const ride = await createRide({ pickup: p, destination: d, estimate, city: CITY });
@@ -281,6 +342,13 @@ export default function RequestPage() {
                           setDestination('');
                           setSelectedDriver(null);
                           await load();
+                          // store ETA to clipboard option
+                          if (selectedDriverETA) {
+                            try {
+                              await navigator.clipboard.writeText(`Driver ETA ${selectedDriverETA.mins} min`);
+                              setToast('ETA copied to clipboard');
+                            } catch {}
+                          }
                           window.location.href = `/ride/${ride.id}`;
                         } catch (e: any) {
                           setErr(e?.message || 'Failed to request driver');
