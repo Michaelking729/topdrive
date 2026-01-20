@@ -14,6 +14,15 @@ export default function DriverPage() {
 
   const token = getAccessToken();
   const user = getUser();
+  const [sharingLocation, setSharingLocation] = useState(false);
+
+  function hashToLatLng(s: string) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h << 5) - h + s.charCodeAt(i);
+    const lat = 6 + ((h % 1000) / 1000) * 0.3;
+    const lng = 3 + (((h >> 2) % 1000) / 1000) * 0.3;
+    return { lat, lng };
+  }
 
   async function load() {
     try {
@@ -123,6 +132,37 @@ export default function DriverPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Broadcast simulated GPS to server when online and sharingLocation
+  useEffect(() => {
+    let intv: ReturnType<typeof setInterval> | null = null;
+    const sendLocation = async () => {
+      try {
+        const id = user?.id || "driver-demo";
+        const base = hashToLatLng(id + (Math.floor(Math.random() * 1000)).toString());
+        const lat = base.lat + (Math.random() - 0.5) * 0.02;
+        const lng = base.lng + (Math.random() - 0.5) * 0.02;
+        await fetch(`/api/drivers/location`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", authorization: `Bearer ${token}` },
+          body: JSON.stringify({ id, lat, lng, available: true }),
+        });
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    if (isOnline && sharingLocation) {
+      // send immediately then every 3s
+      sendLocation();
+      intv = setInterval(sendLocation, 3000);
+    }
+
+    return () => {
+      if (intv) clearInterval(intv);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnline, sharingLocation, user?.id]);
+
   async function acceptRide(rideId: string, driverName: string) {
     setBusyRideId(rideId);
     try {
@@ -223,9 +263,14 @@ export default function DriverPage() {
             <p className="text-xs text-gray-300 mt-1">{user?.name || "Driver"}</p>
           </div>
           <div className="flex gap-3">
-            <button onClick={() => setIsOnline(!isOnline)} className={`rounded-full px-4 py-2 text-sm font-bold transition-all ${isOnline ? "bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg shadow-green-500/50" : "bg-gray-700 text-gray-200 hover:bg-gray-600"}`}>
-              {isOnline ? "🟢 Online" : "⚫ Offline"}
-            </button>
+            <div className="flex items-center gap-3">
+              <button onClick={() => setIsOnline(!isOnline)} className={`rounded-full px-4 py-2 text-sm font-bold transition-all ${isOnline ? "bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg shadow-green-500/50" : "bg-gray-700 text-gray-200 hover:bg-gray-600"}`}>
+                {isOnline ? "🟢 Online" : "⚫ Offline"}
+              </button>
+              <button onClick={() => setSharingLocation(!sharingLocation)} className={`rounded-full px-3 py-2 text-sm font-semibold ${sharingLocation ? "bg-yellow-400 text-black" : "bg-gray-700 text-gray-200 hover:bg-gray-600"}`}>
+                {sharingLocation ? "📡 Sharing" : "📶 Share"}
+              </button>
+            </div>
             <button onClick={() => { logout(); window.location.href = "/login"; }} className="rounded-full bg-gradient-to-r from-red-500 to-pink-600 text-white px-4 py-2 text-sm font-bold hover:shadow-lg transition-all">
               Logout
             </button>

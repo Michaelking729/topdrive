@@ -62,6 +62,7 @@ export default function RequestPage() {
 
   const [rides, setRides] = useState<Ride[]>([]);
   const [drivers, setDrivers] = useState<Array<{ id: string; name?: string; lat: number; lng: number; available?: boolean }>>([]);
+  const [driverStreamConnected, setDriverStreamConnected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -93,6 +94,35 @@ export default function RequestPage() {
       // ignore for now
     }
   }
+
+  useEffect(() => {
+    // Subscribe to driver location SSE for real-time updates
+    try {
+      const es = new EventSource(`/api/drivers/stream`);
+      es.addEventListener("driver-location", (ev: any) => {
+        try {
+          const data = JSON.parse(ev.data);
+          setDrivers((cur) => {
+            const idx = cur.findIndex((c) => c.id === data.id);
+            if (idx >= 0) {
+              const copy = [...cur];
+              copy[idx] = { ...copy[idx], lat: data.lat, lng: data.lng, available: data.available };
+              return copy;
+            }
+            return [{ id: data.id, name: data.name, lat: data.lat, lng: data.lng, available: data.available }, ...cur].slice(0, 50);
+          });
+        } catch {}
+      });
+      es.onopen = () => setDriverStreamConnected(true);
+      es.onerror = () => {
+        es.close();
+        setDriverStreamConnected(false);
+      };
+      return () => es.close();
+    } catch {
+      // ignore
+    }
+  }, []);
 
   useEffect(() => {
     load();
