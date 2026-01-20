@@ -27,12 +27,14 @@ export default function DriverPage() {
       // Load rides
       const ridesRes = await fetch("/api/rides", {
         headers: { authorization: `Bearer ${token}` },
+        cache: "no-store",
       }).then((r) => r.json());
-      setRides(ridesRes.rides || []);
+      setRides(ridesRes || ridesRes.rides || []);
 
       // Load wallet
       const walletRes = await fetch("/api/wallet", {
         headers: { authorization: `Bearer ${token}` },
+        cache: "no-store",
       }).then((r) => r.json());
       setWallet(walletRes);
     } catch (e: any) {
@@ -43,24 +45,73 @@ export default function DriverPage() {
   }
 
   useEffect(() => {
-    load();
-    const interval = setInterval(load, 6000);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    let interval: ReturnType<typeof setInterval> | null = null;
 
-  async function acceptRide(rideId: string, driverId: string) {
+    // initial load
+    load();
+
+    // Poll frequently when online, otherwise poll slowly so drivers see new requests
+    const startPolling = (ms: number) => {
+      if (interval) clearInterval(interval);
+      interval = setInterval(load, ms);
+    };
+
+    const stopPolling = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+
+    if (isOnline) startPolling(2000);
+    else startPolling(5000);
+
+    return () => stopPolling();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnline]);
+
+  // Listen to SSE stream for immediate updates
+  useEffect(() => {
+    if (!token) return;
+    const es = new EventSource(`/api/rides/stream`);
+    es.addEventListener("ride-created", (ev: any) => {
+      try {
+        const data = JSON.parse(ev.data);
+        setRides((cur) => [data, ...cur.filter((r) => r.id !== data.id)].slice(0, 50));
+      } catch {}
+    });
+    es.addEventListener("ride-updated", (ev: any) => {
+      try {
+        const data = JSON.parse(ev.data);
+        setRides((cur) => [data, ...cur.filter((r) => r.id !== data.id)].slice(0, 50));
+      } catch {}
+    });
+    es.onerror = () => {
+      es.close();
+    };
+    return () => {
+      es.close();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  async function acceptRide(rideId: string, driverName: string) {
     setBusyRideId(rideId);
     try {
+      // prefer a readable driver name
+      const nameToSend = driverName || (user?.name || user?.email || "Driver");
       const res = await fetch(`/api/rides/${rideId}/accept`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
           authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ driverId }),
+        body: JSON.stringify({ driverName: nameToSend }),
       });
-      if (!res.ok) throw new Error("Failed to accept ride");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || "Failed to accept ride");
+      }
       await load();
       window.location.href = `/ride/${rideId}`;
     } catch (e: any) {

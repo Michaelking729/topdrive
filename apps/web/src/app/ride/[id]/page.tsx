@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import MapMock from "@/components/MapMock";
 import { useParams } from "next/navigation";
 import { getRide, type Ride, type RideStatus } from "@/lib/api";
 import { getAccessToken } from "@/lib/session";
@@ -108,6 +109,40 @@ export default function RideTrackingPage() {
     const t = setInterval(load, 2000);
     return () => clearInterval(t);
   }, [id]);
+
+  // Simulate driver position when arriving or in-progress
+  const [driverPos, setDriverPos] = useState<{ lat: number; lng: number } | null>(null);
+
+  useEffect(() => {
+    if (!ride) return;
+    let anim: ReturnType<typeof setInterval> | null = null;
+
+    if (ride.status === "ARRIVING" || ride.status === "IN_PROGRESS") {
+      // compute pseudo positions from strings
+      const hash = (s: string) => {
+        let h = 0;
+        for (let i = 0; i < s.length; i++) h = (h << 5) - h + s.charCodeAt(i);
+        return h;
+      };
+      const p = ride.pickup;
+      const d = ride.destination;
+      const start = { lat: 6 + ((hash(p) % 1000) / 1000) * 0.3, lng: 3 + (((hash(p) >> 2) % 1000) / 1000) * 0.3 };
+      const end = { lat: 6 + ((hash(d) % 1000) / 1000) * 0.3, lng: 3 + (((hash(d) >> 2) % 1000) / 1000) * 0.3 };
+      let t0 = 0;
+      anim = setInterval(() => {
+        t0 = (t0 + 0.05) % 1;
+        const lat = start.lat + (end.lat - start.lat) * t0;
+        const lng = start.lng + (end.lng - start.lng) * t0;
+        setDriverPos({ lat, lng });
+      }, 800);
+    } else {
+      setDriverPos(null);
+    }
+
+    return () => {
+      if (anim) clearInterval(anim);
+    };
+  }, [ride?.status, ride?.pickup, ride?.destination]);
 
   const idx = useMemo(() => (ride ? statusIndex(ride.status) : -1), [ride]);
 
@@ -224,6 +259,11 @@ export default function RideTrackingPage() {
                   </span>
                 )}
               </div>
+            </div>
+
+            {/* Map */}
+            <div className="mt-4">
+              <MapMock pickup={ride.pickup} destination={ride.destination} driverPos={driverPos} />
             </div>
 
             {/* Timeline */}

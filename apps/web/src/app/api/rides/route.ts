@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { broadcastEvent } from "@/lib/rideStream";
 
 export async function GET() {
   const rides = await prisma.ride.findMany({
@@ -37,6 +38,13 @@ export async function POST(req: Request) {
       status: "REQUESTED",
     },
   });
+
+  // Broadcast to connected clients (driver dashboards)
+  try {
+    broadcastEvent("ride-created", ride);
+  } catch (e) {
+    // ignore broadcast errors
+  }
 
   return NextResponse.json(ride, { status: 201 });
 }

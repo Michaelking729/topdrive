@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import MapMock from "@/components/MapMock";
 import { createRide, getRides, type Ride } from "@/lib/api";
 
 function formatMoney(n: number) {
@@ -185,6 +186,16 @@ export default function RequestPage() {
           )}
 
           <div className="rounded-3xl border border-slate-200/70 bg-white/85 backdrop-blur p-5 sm:p-7 shadow-[0_18px_55px_rgba(2,6,23,0.07)]">
+            <div className="mb-4">
+              <MapMock
+                pickup={pickup}
+                destination={destination}
+                onPick={(kind, text) => {
+                  if (kind === "pickup") setPickup(text);
+                  else setDestination(text);
+                }}
+              />
+            </div>
             <p className="text-xs font-bold tracking-wider text-blue-700">
               QUICK REQUEST • AUTO PRICING
             </p>

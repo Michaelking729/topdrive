@@ -45,6 +45,13 @@ export async function PATCH(
       data: { status: nextStatus as any },
     });
 
+    try {
+      const { broadcastEvent } = await import("@/lib/rideStream");
+      broadcastEvent("ride-updated", updated);
+    } catch (e) {
+      // ignore
+    }
+
     return NextResponse.json(updated);
   } catch (e) {
     console.error("PATCH /api/rides/[id]/status crashed:", e);

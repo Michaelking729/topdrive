@@ -46,6 +46,14 @@ export async function PATCH(
 
     // Return the updated ride
     const ride = await prisma.ride.findUnique({ where: { id } });
+    try {
+      if (ride) {
+        const { broadcastEvent } = await import("@/lib/rideStream");
+        broadcastEvent("ride-updated", ride);
+      }
+    } catch (e) {
+      // ignore
+    }
     return NextResponse.json(ride);
   } catch (e) {
     console.error("PATCH /api/rides/[id]/accept crashed:", e);
