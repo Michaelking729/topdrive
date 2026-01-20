@@ -95,6 +95,33 @@ export default function DriverPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  // Additionally connect to WebSocket server (if available)
+  useEffect(() => {
+    let ws: WebSocket | null = null;
+    try {
+      const host = window.location.hostname;
+      ws = new WebSocket(`ws://${host}:${process.env.NEXT_PUBLIC_WS_PORT || 4001}`);
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg?.event && msg?.data) {
+            const data = msg.data;
+            setRides((cur) => [data, ...cur.filter((r) => r.id !== data.id)].slice(0, 50));
+          }
+        } catch {}
+      };
+      ws.onclose = () => {
+        ws = null;
+      };
+    } catch {}
+    return () => {
+      try {
+        ws?.close();
+      } catch {}
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function acceptRide(rideId: string, driverName: string) {
     setBusyRideId(rideId);
     try {

@@ -47,7 +47,12 @@ export async function PATCH(
 
     try {
       const { broadcastEvent } = await import("@/lib/rideStream");
+      const { broadcastWS, ensureWSS } = await import("@/lib/wsServer");
       broadcastEvent("ride-updated", updated);
+      try {
+        ensureWSS();
+        broadcastWS({ event: "ride-updated", data: updated });
+      } catch {}
     } catch (e) {
       // ignore
     }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import MapMock from "@/components/MapMock";
+import MapLeaflet from "@/components/MapLeaflet";
 import { useParams } from "next/navigation";
 import { getRide, type Ride, type RideStatus } from "@/lib/api";
 import { getAccessToken } from "@/lib/session";
@@ -263,7 +263,7 @@ export default function RideTrackingPage() {
 
             {/* Map */}
             <div className="mt-4">
-              <MapMock pickup={ride.pickup} destination={ride.destination} driverPos={driverPos} />
+              <MapLeaflet pickup={ride.pickup} destination={ride.destination} driverPos={driverPos} />
             </div>
 
             {/* Timeline */}

@@ -1,11 +1,21 @@
 import { NextResponse, NextRequest } from "next/server";
 import { addClient, removeClient } from "@/lib/rideStream";
+import { requireAuth } from "@/lib/auth";
 
 function encode(s: string) {
   return new TextEncoder().encode(s);
 }
 
 export async function GET(req: NextRequest) {
+  try {
+    const user = await requireAuth(req);
+    // only drivers or admins should subscribe
+    if (!["DRIVER", "ADMIN"].includes(user.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  } catch (e) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   const stream = new ReadableStream({
     start(controller) {
       // initial comment to establish connection
