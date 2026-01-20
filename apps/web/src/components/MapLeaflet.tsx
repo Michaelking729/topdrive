@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
+
+// Dynamically import Leaflet in the browser only to avoid SSR errors
+let L: any = null;
+
 
 type Pos = { lat: number; lng: number };
 
@@ -18,25 +20,42 @@ export default function MapLeaflet({
   pickup,
   destination,
   driverPos,
+  drivers,
   onPick,
+  onDriverSelect,
 }: {
   pickup?: string;
   destination?: string;
   driverPos?: Pos | null;
+  drivers?: Array<{ id: string; name?: string; lat: number; lng: number; available?: boolean }> | null;
   onPick?: (k: "pickup" | "destination", t: string) => void;
+  onDriverSelect?: (id: string) => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const markersRef = useRef<Record<string, L.Marker>>({});
+  const mapRef = useRef<any>(null);
+  const markersRef = useRef<Record<string, any>>({});
 
   useEffect(() => {
     if (!ref.current) return;
     if (mapRef.current) return;
-    const map = L.map(ref.current, { center: [6.5, 3.5], zoom: 12, zoomControl: false });
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "© OpenStreetMap contributors",
-    }).addTo(map);
-    mapRef.current = map;
+    // Dynamically import Leaflet and CSS in the browser only
+    import("leaflet")
+      .then((mod) => {
+        L = mod.default || mod;
+        return import("leaflet/dist/leaflet.css").catch(() => {});
+      })
+      .then(() => {
+        if (!ref.current) return;
+        const map = L.map(ref.current, { center: [6.5, 3.5], zoom: 12, zoomControl: false });
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: "© OpenStreetMap contributors",
+        }).addTo(map);
+        mapRef.current = map;
+      })
+      .catch((err) => {
+        // safe fallback: don't crash the app during SSR/build
+        console.warn("Leaflet load failed", err);
+      });
   }, []);
 
   useEffect(() => {
@@ -75,6 +94,24 @@ export default function MapLeaflet({
     else if (markersRef.current["driver"]) {
       map.removeLayer(markersRef.current["driver"]);
       delete markersRef.current["driver"];
+    }
+
+    // Render multiple drivers if provided
+    if (drivers && Array.isArray(drivers)) {
+      // remove any previous driver-* markers
+      Object.keys(markersRef.current)
+        .filter((k) => k.startsWith("driver-"))
+        .forEach((k) => {
+          try {
+            map.removeLayer(markersRef.current[k]);
+          } catch {}
+          delete markersRef.current[k];
+        });
+
+      drivers.forEach((d) => {
+        const key = `driver-${d.id}`;
+        setMarker(key, [d.lat, d.lng], d.available ? "yellow" : "gray", d.name || "Driver", () => onDriverSelect?.(d.id));
+      });
     }
 
     const bounds = [] as [number, number][];

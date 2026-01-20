@@ -120,6 +120,12 @@ export default function RideTrackingPage() {
         if (data?.id === id) setRide(data);
       } catch {}
     });
+    es.addEventListener("ride-location", (ev: any) => {
+      try {
+        const data = JSON.parse(ev.data);
+        if (data?.id === id) setDriverPos(data.driverLat && data.driverLng ? { lat: data.driverLat, lng: data.driverLng } : null);
+      } catch {}
+    });
     es.onerror = () => es.close();
 
     let ws: WebSocket | null = null;
@@ -131,6 +137,9 @@ export default function RideTrackingPage() {
           const msg = JSON.parse(ev.data);
           if (msg?.event === 'ride-updated' && msg.data?.id === id) {
             setRide(msg.data);
+          }
+          if (msg?.event === 'ride-location' && msg.data?.id === id) {
+            setDriverPos(msg.data.driverLat && msg.data.driverLng ? { lat: msg.data.driverLat, lng: msg.data.driverLng } : null);
           }
         } catch {}
       };

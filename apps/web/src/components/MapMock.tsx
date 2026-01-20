@@ -16,12 +16,16 @@ export default function MapMock({
   pickup,
   destination,
   driverPos,
+  drivers,
   onPick,
+  onDriverSelect,
 }: {
   pickup?: string;
   destination?: string;
   driverPos?: Pos | null;
+  drivers?: Array<{ id: string; name?: string; lat: number; lng: number; available?: boolean }> | null;
   onPick?: (kind: "pickup" | "destination", text: string) => void;
+  onDriverSelect?: (id: string) => void;
 }) {
   const pk = useMemo(() => (pickup ? hashToLatLng(pickup) : null), [pickup]);
   const ds = useMemo(() => (destination ? hashToLatLng(destination) : null), [destination]);
@@ -74,6 +78,19 @@ export default function MapMock({
             <div className="h-3 w-3 rounded-full bg-yellow-400 animate-bounce" />
           </div>
         )}
+
+        {/* multiple drivers */}
+        {drivers && drivers.map((d) => (
+          <div
+            key={d.id}
+            onClick={() => onDriverSelect?.(d.id)}
+            className="absolute bg-white/90 rounded-full p-1 shadow-xl cursor-pointer"
+            style={{ left: `${((d.lng - center.lng) * 200 + 50).toFixed(2)}%`, top: `${((d.lat - center.lat) * -200 + 50).toFixed(2)}%` }}
+            title={d.name || 'Driver'}
+          >
+            <div className={`h-3 w-3 rounded-full ${d.available ? 'bg-yellow-400 animate-bounce' : 'bg-gray-400'}`} />
+          </div>
+        ))}
       </div>
       <div className="p-3 text-xs text-slate-600">
         Centered near {center.lat.toFixed(3)}, {center.lng.toFixed(3)} — Click pins to populate inputs.

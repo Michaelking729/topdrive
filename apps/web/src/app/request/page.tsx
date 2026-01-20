@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import MapLeaflet from "@/components/MapLeaflet";
+import { getDrivers } from "@/lib/api";
 import { createRide, getRides, type Ride } from "@/lib/api";
 
 function formatMoney(n: number) {
@@ -60,6 +61,7 @@ export default function RequestPage() {
   const [destination, setDestination] = useState("");
 
   const [rides, setRides] = useState<Ride[]>([]);
+  const [drivers, setDrivers] = useState<Array<{ id: string; name?: string; lat: number; lng: number; available?: boolean }>>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -83,8 +85,18 @@ export default function RequestPage() {
     }
   }
 
+  async function loadDrivers() {
+    try {
+      const d = await getDrivers();
+      setDrivers(Array.isArray(d) ? d : []);
+    } catch (e) {
+      // ignore for now
+    }
+  }
+
   useEffect(() => {
     load();
+    loadDrivers();
   }, []);
 
   useEffect(() => {
@@ -190,9 +202,14 @@ export default function RequestPage() {
               <MapLeaflet
                 pickup={pickup}
                 destination={destination}
+                drivers={drivers}
                 onPick={(kind, text) => {
                   if (kind === "pickup") setPickup(text);
                   else setDestination(text);
+                }}
+                onDriverSelect={(id) => {
+                  const d = drivers.find((x) => x.id === id);
+                  setToast(d ? `Driver ${d.name || d.id} selected — request them via Support` : `Driver ${id} selected`);
                 }}
               />
             </div>

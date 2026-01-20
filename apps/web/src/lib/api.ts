@@ -70,6 +70,11 @@ export async function getRide(id: string) {
   return (await readJsonOrThrow(res)) as Ride;
 }
 
+export async function getDrivers() {
+  const res = await fetch(`/api/drivers`, { cache: "no-store" });
+  return (await readJsonOrThrow(res)) as Array<{ id: string; name?: string; lat: number; lng: number; available?: boolean }>;
+}
+
 export async function updateRide(
   id: string,
   data: { status: RideStatus; driverName?: string }

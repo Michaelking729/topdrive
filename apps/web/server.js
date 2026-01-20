@@ -33,13 +33,17 @@ app.prepare().then(() => {
     if (err) throw err;
     console.log(`> Ready on http://localhost:${port}`);
 
-    // attach WebSocket server to the same server
-    try {
-      const { attachWSSToServer } = require('./src/lib/wsServer');
-      attachWSSToServer(server, '/ws');
-      console.log('> WebSocket server attached at /ws');
-    } catch (e) {
-      console.warn('> Failed to attach WS server:', e?.message || e);
+    // attach WebSocket server to the same server when explicitly enabled
+    if (process.env.ENABLE_WS === '1') {
+      try {
+        const { attachWSSToServer } = require('./src/lib/wsServer');
+        attachWSSToServer(server, '/ws');
+        console.log('> WebSocket server attached at /ws');
+      } catch (e) {
+        console.warn('> Failed to attach WS server:', e?.message || e);
+      }
+    } else {
+      console.log('> WebSocket server disabled (set ENABLE_WS=1 to enable)');
     }
   });
 });
