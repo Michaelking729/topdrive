@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import MapLeaflet from "@/components/MapLeaflet";
 import { getDrivers } from "@/lib/api";
+import { getAccessToken } from "@/lib/session";
 import { createRide, getRides, type Ride } from "@/lib/api";
 
 function formatMoney(n: number) {
@@ -269,9 +270,10 @@ export default function RequestPage() {
                           }
                           const ride = await createRide({ pickup: p, destination: d, estimate, city: CITY });
                           // ping driver
+                          const token = getAccessToken();
                           await fetch(`/api/drivers/ping`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: { 'Content-Type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
                             body: JSON.stringify({ driverId: selectedDriver, rideId: ride.id, message: 'You have a direct request' })
                           });
                           setToast('Requested driver — waiting for them to accept');

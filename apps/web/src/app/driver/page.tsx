@@ -344,6 +344,44 @@ export default function DriverPage() {
           </div>
         </div>
 
+        {/* incoming ping UI */}
+        {incomingPing && (
+          <div className="fixed left-6 bottom-6 z-50 w-96 rounded-2xl bg-white p-4 shadow-xl border">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="font-extrabold">Incoming Request</p>
+                <p className="text-sm text-slate-600">{incomingPing.message || 'A rider requested you'}</p>
+                <p className="text-xs text-slate-400 mt-1">From: {incomingPing.from?.name || incomingPing.from?.id || 'Rider'}</p>
+              </div>
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={async () => {
+                    // try fast WS accept
+                    try {
+                      if (wsRef.current && wsRef.current.readyState === 1) {
+                        wsRef.current.send(JSON.stringify({ event: 'accept-ride', data: { rideId: incomingPing.rideId, driverName: user?.name || user?.email || 'Driver' } }));
+                      } else {
+                        await acceptRide(incomingPing.rideId, user?.name || user?.email || 'Driver');
+                      }
+                    } catch (e) {
+                      try {
+                        await acceptRide(incomingPing.rideId, user?.name || user?.email || 'Driver');
+                      } catch {}
+                    } finally {
+                      setIncomingPing(null);
+                    }
+                  }}
+                  className="rounded-xl bg-emerald-500 text-white px-3 py-2 font-bold"
+                >
+                  Accept
+                </button>
+
+                <button onClick={() => setIncomingPing(null)} className="rounded-xl bg-gray-100 px-3 py-2 text-sm">Ignore</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div>
           <h2 className="text-2xl font-black text-white mb-4">📍 Available Requests</h2>
           <div className="space-y-4">

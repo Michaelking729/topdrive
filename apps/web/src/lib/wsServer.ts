@@ -125,12 +125,21 @@ export function ensureWSS() {
   return wss;
 }
 
-export function broadcastWS(msg: any) {
+export function broadcastWS(msg: any, targetUserId?: string) {
   try {
     ensureWSS();
     const data = JSON.stringify(msg);
-    wss!.clients.forEach((c) => {
-      if (c.readyState === 1) c.send(data);
+    wss!.clients.forEach((c: any) => {
+      try {
+        if (c.readyState !== 1) return;
+        if (targetUserId) {
+          const uid = (c as any).user?.id;
+          if (!uid || uid !== targetUserId) return;
+        }
+        c.send(data);
+      } catch (e) {
+        // ignore send errors per-client
+      }
     });
   } catch (e) {
     // ignore
