@@ -14,7 +14,15 @@ export function signAccessToken(userId: string) {
 
 export async function requireAuth(req: NextRequest) {
   const authHeader = req.headers.get("authorization") || "";
-  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  const headerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  // allow token from cookie named `accessToken`
+  let token = headerToken;
+  try {
+    const cookieVal = (req.cookies && req.cookies.get && req.cookies.get("accessToken")?.value) || "";
+    if (!token && cookieVal) token = cookieVal;
+  } catch {
+    // ignore
+  }
   if (!token) throw new Error("UNAUTHORIZED");
   if (!ACCESS_SECRET) throw new Error("UNAUTHORIZED");
 

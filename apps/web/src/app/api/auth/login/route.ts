@@ -25,10 +25,22 @@ export async function POST(req: NextRequest) {
 
     const accessToken = signAccessToken(user.id);
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       accessToken,
       user: { id: user.id, email: user.email, name: user.name, role: user.role },
     });
+
+    // set httpOnly cookie for browser-based auth (so EventSource can use it)
+    const maxAge = 60 * 15; // default 15 minutes
+    res.cookies.set("accessToken", accessToken, {
+      httpOnly: true,
+      path: "/",
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge,
+    });
+
+    return res;
   } catch (e: any) {
     console.error("LOGIN error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });

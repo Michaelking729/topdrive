@@ -42,13 +42,25 @@ export async function POST(req: NextRequest) {
 
     const accessToken = signAccessToken(user.id);
 
-    return NextResponse.json(
+    const res = NextResponse.json(
       {
         accessToken,
         user,
       },
       { status: 201 }
     );
+
+    // set httpOnly cookie for browser-based auth
+    const maxAge = 60 * 15; // 15 minutes
+    res.cookies.set("accessToken", accessToken, {
+      httpOnly: true,
+      path: "/",
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge,
+    });
+
+    return res;
   } catch (e: any) {
     console.error("REGISTER error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
