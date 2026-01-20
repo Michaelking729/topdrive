@@ -110,6 +110,38 @@ export default function RideTrackingPage() {
     return () => clearInterval(t);
   }, [id]);
 
+  // Listen for realtime updates via SSE and WebSocket
+  useEffect(() => {
+    if (!id) return;
+    const es = new EventSource(`/api/rides/stream`);
+    es.addEventListener("ride-updated", (ev: any) => {
+      try {
+        const data = JSON.parse(ev.data);
+        if (data?.id === id) setRide(data);
+      } catch {}
+    });
+    es.onerror = () => es.close();
+
+    let ws: WebSocket | null = null;
+    try {
+      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(`${proto}://${window.location.host}/ws`);
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg?.event === 'ride-updated' && msg.data?.id === id) {
+            setRide(msg.data);
+          }
+        } catch {}
+      };
+    } catch {}
+
+    return () => {
+      try { es.close(); } catch {}
+      try { ws?.close(); } catch {}
+    };
+  }, [id]);
+
   // Simulate driver position when arriving or in-progress
   const [driverPos, setDriverPos] = useState<{ lat: number; lng: number } | null>(null);
 
