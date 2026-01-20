@@ -95,12 +95,13 @@ export default function DriverPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  // Additionally connect to WebSocket server (if available)
+    // Additionally connect to WebSocket server (same origin, single-port)
   useEffect(() => {
     let ws: WebSocket | null = null;
     try {
-      const host = window.location.hostname;
-      ws = new WebSocket(`ws://${host}:${process.env.NEXT_PUBLIC_WS_PORT || 4001}`);
+      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      const url = `${proto}://${window.location.host}/ws`;
+      ws = new WebSocket(url);
       ws.onmessage = (ev) => {
         try {
           const msg = JSON.parse(ev.data);

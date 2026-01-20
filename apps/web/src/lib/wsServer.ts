@@ -102,11 +102,66 @@ export function wssCount() {
   return wss ? wss.clients.size : 0;
 }
 
-// Auto-start WS server during development to attach quickly
-if (process.env.NODE_ENV !== "test") {
-  try {
-    ensureWSS();
-  } catch (e) {
-    // ignore start errors
-  }
+export function attachWSSToServer(server: any, path = "/ws") {
+  if (wss) return wss;
+  wss = new WebSocketServer({ server, path });
+
+  wss.on("connection", async (ws, req) => {
+    try {
+      // reuse the same auth logic as ensureWSS
+      const headerCookie = (req && (req as any).headers && (req as any).headers.cookie) || "";
+      const cookies = parseCookies(headerCookie as string);
+      let token = cookies["accessToken"];
+      if (!token) {
+        try {
+          const url = new URL((req as any).url || "", `http://${(req as any).headers.host || 'localhost'}`);
+          token = url.searchParams.get("token") || undefined;
+        } catch {}
+      }
+
+      if (!token || !ACCESS_SECRET) {
+        try {
+          ws.close(1008, "Unauthorized");
+        } catch {}
+        return;
+      }
+
+      let payload: any;
+      try {
+        payload = jwt.verify(token, ACCESS_SECRET);
+      } catch {
+        try {
+          ws.close(1008, "Invalid token");
+        } catch {}
+        return;
+      }
+
+      const userId = payload?.sub;
+      if (!userId) {
+        try {
+          ws.close(1008, "Invalid token payload");
+        } catch {}
+        return;
+      }
+
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, role: true, name: true, email: true } });
+      if (!user || !["DRIVER", "ADMIN"].includes(user.role)) {
+        try {
+          ws.close(1008, "Forbidden");
+        } catch {}
+        return;
+      }
+
+      try {
+        (ws as any).user = user;
+        ws.send(JSON.stringify({ event: "connected", data: { time: Date.now(), user: { id: user.id, role: user.role } } }));
+      } catch {}
+    } catch (e) {
+      try {
+        ws.close();
+      } catch {}
+    }
+  });
+
+  return wss;
 }
